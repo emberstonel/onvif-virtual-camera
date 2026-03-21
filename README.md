@@ -1,219 +1,210 @@
-# Virtual Onvif Server
-This is a simple Virtual Onvif Server that was originally developed to work around limitations in the third party support of Unifi Protect.
-It takes an existing RTSP Stream and builds a virtual Onvif device for it, so the stream can be consumed by Onvif compatible clients.
+# ONVIF Virtual Camera (Docker Edition)
 
-Currently only Onvif Profile S (Live Streaming) is implemented with limited functionality.
+This project provides a lightweight ONVIF Device + Media Service emulator designed for UniFi Protect and other ONVIF clients. It is ideal for cameras that contain multiple "heads" or expose various angles as separate cameras.
 
-# Unifi Protect
-Unifi Protect 5.0 introduced support for third party cameras that allow the user to add Onvif compatible cameras to their Unifi Protect system.
+Each virtual camera exposes:
 
-At the time of writing this, version 5.0.34 of Unifi Protect unfortunately has some limitations and does only support cameras with a single high- and low quality stream. Unfortunately video recorders that output multiple cameras (e.g. Hikvision / Dahua XVR) or cameras with multiple internal cameras are not properly supported.
+- ONVIF Device Service  
+- ONVIF Media Service  
+- RTSP stream URL  
+- Snapshot URL  
 
-Run this tool on a Raspberry Pi or similar to split up a multi-channel Onvif device into multiple virtual Onvif devices that work well with Unifi Protect 5.0.
+The container can run multiple virtual cameras, each bound to a unique MacVLAN interface with its own IP address. RTSP proxying is not required as the full RTSP paths (to the original host device) are passed in the ONVIF replies. Note that this fork is focused on **Docker deployment**.
 
-## Raspberry Pi Setup
+---
 
-### Prerequisites
-Ensure you are running Rapsberry OS 11 (Bullseye) or newer and have Node.js v16 or higher installed.
+## Features
 
-To check your version of Node.js run this command:
+- No external dependencies  
+- Multiple virtual ONVIF cameras in one container
+- Helper script to build MacVLAN interfaces based on your config
+- Fully compatible with UniFi Protect’s ONVIF discovery  
+- RTSP + snapshot URLs mapped from real host cameras  
+
+---
+
+## Requirements
+
+- Docker or Docker Compose  
+- A MacVLAN interface for each virtual camera  
+- A `config.yaml` mounted into the container root as `/config.yaml`  
+
+---
+
+## MacVLAN Setup (Required)
+
+Each virtual camera must appear on the network as a **unique MAC + IP**.  
+This project includes a helper script that automates creation and persistence of these interfaces using **systemd‑networkd** which is available on most common Linux distributions (Ubuntu, Debian, Arch, Fedora, etc.).
+
+The script performs:
+
+- Creation of `vcam-<name>` MacVLAN interfaces  
+- Assignment of MAC addresses from `config.yaml`  
+- DHCP or static IP assignment  
+- Generation of persistent `.netdev` and `.network` files under `/etc/systemd/network/`  
+- Immediate activation of the interfaces  
+- A cleanup mode to remove all vcam interfaces and persistence files  
+
+This makes it easy to rebuild interfaces when changing MACs or when UniFi Protect gets “stuck” on a previous adoptions.
+
+---
+
+### Running the Script
+
+The script must be run **on the host**, not inside the container. It can be copied to your host system using the following (if your container name differs, adjust `onvif-proxy` accordingly):
+
 ```bash
-node -v
+docker cp onvif-proxy:/resources/macvlan-init.sh ./macvlan-init.sh
+chmod +x ./macvlan-init.sh
 ```
 
-To install Node.js run these commands:
+The script requires:
+
+- A parent interface (e.g., `eth0`, `eno1`, `enp3s0`)  
+- A mode (`dhcp` or `static`)  
+- Optional static IPs  
+
+Examples below.
+
+---
+
+### DHCP Mode (Recommended)
+
+This is the simplest and most common setup.
+
 ```bash
-curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.5/install.sh | bash
-
-# Open a new Terminal / SSH connection
-nvm install --lts
+sudo ./resources/macvlan-init.sh \
+    --parent eth0 \
+    --mode dhcp
 ```
 
-### Installation
-To install all required dependencies run:
+The script will:
+
+- Read all virtual cameras from `/config.yaml`
+- Create `vcam-<name>` interfaces
+- Assign MAC addresses
+- Request DHCP leases
+- Generate persistent systemd‑networkd files
+- Restart systemd‑networkd to apply them
+
+---
+
+### Static Mode
+
+If you prefer static IPs, provide them in the same order the virtual cameras appear in your config:
+
 ```bash
-cd /path/to/onvif-server/
-npm install
+sudo ./resources/macvlan-init.sh \
+    --parent eth0 \
+    --mode static \
+    --ips 192.168.10.11,192.168.10.12
 ```
 
-### Virtual Networks
-To properly work with Unifi Protect each virtual Onvif device needs to have its own unique MAC address.
-The easiest way to achieve this is by creating virtual network interfaces with the MacVLAN[^1] network driver:
-```bash
-ip link add [NAME] link [INTERFACE] address [MAC_ADDRESS] type macvlan mode bridge
-```
+Static mode automatically:
 
-> [!TIP]
-> It is recommended to reserve fixed IP addresses in your DHCP server for your virtual networks.
+- Infers the subnet mask and gateway from the **parent interface**
+- Writes persistent `.network` files with `Address=` and `Gateway=`
+- No need to specify CIDR or gateway manually.
 
-Replace `[NAME]` with a name of your choosing (e.g. `onvif-proxy-1`) and `[MAC_ADDRESS]` with a locally administered MAC address[^2] (e.g. `a2:a2:a2:a2:a2:a1`) and `[INTERFACE]` with the name of the parent network interface (e.g. `eth0`).
+---
 
+# Docker Usage
 
-#### Example to create four virtual networks:
-```bash
-# Setup the first virtual network with name "onvif-proxy-1" and MAC address "a2:a2:a2:a2:a2:a1":
-sudo ip link add onvif-proxy-1 link eth0 address a2:a2:a2:a2:a2:a1 type macvlan mode bridge
-
-# Setup the first virtual network with name "onvif-proxy-2" and MAC address "a2:a2:a2:a2:a2:a2":
-sudo ip link add onvif-proxy-2 link eth0 address a2:a2:a2:a2:a2:a2 type macvlan mode bridge
-
-# Setup the first virtual network with name "onvif-proxy-3" and MAC address "a2:a2:a2:a2:a2:a3":
-sudo ip link add onvif-proxy-3 link eth0 address a2:a2:a2:a2:a2:a3 type macvlan mode bridge
-
-# Setup the first virtual network with name "onvif-proxy-4" and MAC address "a2:a2:a2:a2:a2:a4":
-sudo ip link add onvif-proxy-4 link eth0 address a2:a2:a2:a2:a2:a4 type macvlan mode bridge
-```
-
-> [!IMPORTANT]
-> All virtual network settings will be lost when you reboot the server and will need to be redone!
-
-## Configure Virtual Onvif Devices
-The configuration can be automatically created by running:
-```bash
-node main.js --create-config
-```
-Enter the hostname and credentials of your real Onvif Camera server and copy/paste the generated configuration into a new file `config.yaml` and change the `<ONVIF PROXY MAC ADDRESS HERE>` fields to one of your virtual network MAC addresses each.
-
-## Example Configuration
-```yaml
-onvif:
-  - mac: a2:a2:a2:a2:a2:a1
-    ports:
-      server: 8081
-      rtsp: 8554
-      snapshot: 8580
-    name: Channel1
-    uuid: 15b21259-77d9-441f-9913-3ccd8a82e430
-    highQuality:
-      rtsp: /cam/realmonitor?channel=1&subtype=0&unicast=true&proto=Onvif
-      snapshot: /onvif/snapshot?channel=1&subtype=0
-      width: 2592
-      height: 1944
-      framerate: 12
-      bitrate: 2048
-      quality: 4
-    lowQuality:
-      rtsp: /cam/realmonitor?channel=1&subtype=1&unicast=true&proto=Onvif
-      snapshot: /onvif/snapshot?channel=1&subtype=1
-      width: 352
-      height: 288
-      framerate: 12
-      bitrate: 160
-      quality: 1
-    target:
-      hostname: 192.168.1.152
-      ports:
-        rtsp: 554
-        snapshot: 80
-```
-
-The above configuration creates a virtual Onvif device that listens on port 8081 of the `a2:a2:a2:a2:a2:a1` virtual network and forwards the RTSP video streams and snapshots from `192.168.1.152` (the real Onvif server).
-
-## Start Virtual Onvif Servers
-Finally, to start the virtual Onvif devices run:
-```bash
-node main.js ./config.yaml
-```
-
-Your Virtual Onvif Devices should now automatically show up for adoption in Unifi Protect as "Onvif Cardinal" device. The username and password are the same as on the real Onvif device.
-
-
-# Docker
-A prebuilt docker image can be found in the packages section of this repository.
-All you need to do is to mount your `config.yaml` to `/onvif.yaml` inside the container.
-
-Example of running the image in a temporary container:
-```bash
-docker run --rm -it -v /path/to/my/config.yaml:/onvif.yaml ghcr.io/daniela-hase/onvif-server:latest
-```
-
-To create the configuration from inside the docker container you can change the entrypoint of the container to `/bin/sh`:
-```bash
-docker run --rm -it --entrypoint /bin/sh ghcr.io/daniela-hase/onvif-server:latest
-
-# Once inside the container, run:
-node main.js --create-config
-```
-
-# Wrapping an RTSP Stream
-This tool can also be used to create Onvif devices from regular RTSP streams by creating the configuration manually.
-
-**RTSP Example:**
-Assume you have this RTSP stream:
-```txt
-rtsp://192.168.1.32:554/cam/stream
-       \__________/ \_/\_________/
-            |       Port    |
-         Hostname           |
-                          Path
-```
-If your RTSP url does not have a port it uses the default port 554.
-
-Your RTSP url may contain a username and password - those should not be included in the config file.
-Instead you will have to enter them in the software that you plan on consuming this Onvif camera in, for example during adoption in Unifi Protect.
-
-Next you need to figure out the resolution and framerate for the stream. If you don't know them, you can use VLC to open the RTSP stream and check the _Media Information_ (Window -> Media Information) for the _"Video Resolution"_ and _"Frame rate"_ on the _"Codec Details"_ page, and the _"Stream bitrate"_ on the _"Statistics"_ page. The bitrate will fluctuate quite a bit most likely, so just pick a number that is close to it (e.g. 1024, 2048, 4096 ..).
-
-Let's assume the resolution is 1920x1080 with 30 fps and a bitrate of 1024 kb/s, then the `config.yaml` for that stream would look as follows:
+## Docker Compose Example
 
 ```yaml
-onvif:
-  - mac: a2:a2:a2:a2:a2:a1                        # The MAC address for the server to run on
-    ports:
-      server: 8081                                # The port for the server to run on
-      rtsp: 8554                                  # The port for the stream passthrough, leave this at 8554
-    name: MyRTSPStream                            # A user define name
-    uuid: 1714a629-ebe5-4bb8-a430-c18ffd8fa5f6    # A randomly chosen UUID (see below)
-    highQuality:
-      rtsp: /cam/stream                           # The RTSP Path
-      width: 1920                                 # The Video Width
-      height: 1080                                # The Video Height
-      framerate: 30                               # The Video Framerate/FPS
-      bitrate: 1024                               # The Video Bitrate in kb/s
-      quality: 4                                  # Quality, leave this as 4 for the high quality stream.
-    lowQuality:
-      rtsp: /cam/stream                           # The RTSP Path
-      width: 1920                                 # The Video Width
-      height: 1080                                # The Video Height
-      framerate: 30                               # The Video Framerate/FPS
-      bitrate: 1024                               # The Video Bitrate in kb/s
-      quality: 1                                  # Quality, leave this as 1 for the low quality stream.
-    target:
-      hostname: 192.168.1.32                      # The Hostname of the RTSP stream
-      ports:
-        rtsp: 554                                 # The Port of the RTSP stream
+version: "3.8"
+
+services:
+  onvif-proxy:
+    build: .
+    container_name: onvif-proxy
+    network_mode: "host"
+    restart: unless-stopped
+    volumes:
+      - ./config.yaml:/config.yaml:ro
 ```
 
-You can either randomly change a few numbers of the UUID, or use a UUIDv4 generator[^3].
+### Why `network_mode: host`?
 
-If you have a separate low-quality RTSP stream available, fill in the information for the `lowQuality` section above. Otherwise just copy the `highQualtiy` settings.
+Because each virtual camera binds to its own **MacVLAN interface** on the host.  
+The container must see the host’s network stack directly.
 
-> [!NOTE]
-> Since we don't provide a snapshot url you will onyl see the Onvif logo in certain places in Unifi Protect where it does not show the livestream.
+---
 
-# Troubleshooting
+# Running
 
-- **All cameras show the same video stream in Unifi Protect**
+Build and start:
 
-Unifi Protect identifies cameras by their MAC address - if multiple cameras have the same MAC address they will be treated as the same.
-It is possible your system is configured for all virtual network interfaces to report the same MAC address, to prevent this run these commands[^4]:
-```bash
-sudo sysctl -w net.ipv4.conf.all.arp_ignore=1
-sudo sysctl -w net.ipv4.conf.all.arp_announce=2
+```
+docker compose up --build -d
 ```
 
-- **Error: Wsse authorized time check failed.**
+View logs:
 
-Try updating the date/time on your Onvif device to the current time.
+```
+docker logs -f onvif-proxy
+```
 
-- **I only see snapshots, no live-stream.**
+---
 
-Are you capturing the RTSP streams of your cameras elsewhere already? It is possible that you hit the maximum concurrent RTSP streams that your camera supports.
+# Adding Cameras to UniFi Protect
 
-Unifi Protect also seems to only support h264 video streams at the moment. So ensure your real Onvif camera encodes videos with h264.
+1. Verify the Docker container is running without errors (review logs)
+2. Log into UniFi Protect and navigate to the "Devices" section
+3. TBD
+4. TBD
+5. TBD
 
+---
 
-[^1]: [What is MacVLAN?](https://ipwithease.com/what-is-macvlan)
-[^2]: [Wikipedia: Locally Administered MAC Address](https://en.wikipedia.org/wiki/MAC_address#:~:text=Locally%20administered%20addresses%20are%20distinguished,how%20the%20address%20is%20administered.)
-[^3]: [UUIDv4 Generator](https://www.uuidgenerator.net/)
-[^4]: [Virtual Interfaces with different MAC addresses](https://serverfault.com/questions/682311/virtual-interfaces-with-different-mac-addresses)
+# Configuration File (`config.yaml`)
+
+This file must be mounted into the container root as:
+
+```
+/config.yaml
+```
+
+A complete example:
+
+```yaml
+host_sources:
+  - name: cam1
+    hostname: 192.168.1.50
+    rtsp_port: 554
+    http_port: 80
+    auth:
+      username: admin
+      password: password123
+
+  - name: cam2
+    hostname: 192.168.1.51
+    rtsp_port: 554
+    http_port: 80
+    auth:
+      username: admin
+      password: password123
+
+virtual_cameras:
+  - name: VirtualCam1
+    model: "VCam-1080p"
+    mac: "02:42:ac:11:00:11"
+    host_source: cam1
+    rtsp_path: "/live1"
+    snapshot_path: "/snapshot1.jpg"
+
+  - name: VirtualCam2
+    model: "VCam-1080p"
+    mac: "02:42:ac:11:00:12"
+    host_source: cam1
+    rtsp_path: "/live2"
+    snapshot_path: "/snapshot2.jpg"
+
+  - name: VirtualCam3
+    model: "VCam-1080p"
+    mac: "02:42:ac:11:00:13"
+    host_source: cam2
+    rtsp_path: "/live"
+    snapshot_path: "/snapshot.jpg"
+```

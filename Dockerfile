@@ -1,7 +1,15 @@
-FROM node:22-alpine
+FROM node:20-slim
 
-ADD . /app
 WORKDIR /app
-RUN npm install
 
-ENTRYPOINT node main.js /onvif.yaml
+# Install only production dependencies
+COPY package.json package-lock.json* ./
+RUN npm install --production
+
+# Copy application code
+COPY main.js ./
+COPY src ./src
+COPY resources ./resources
+
+# Config is mounted at runtime as /config.yaml
+CMD ["node", "main.js"]

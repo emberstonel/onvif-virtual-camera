@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema 
+    xmlns:xs="http://www.w3.org/2001/XMLSchema"
+    targetNamespace="http://www.onvif.org/ver10/schema"
+    elementFormDefault="qualified">
+
+    <xs:complexType name="DeviceServiceCapabilities"/>
+    <xs:complexType name="MediaServiceCapabilities"/>
+
+    <xs:element name="GetDeviceInformationResponse">
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="Manufacturer" type="xs:string"/>
+                <xs:element name="Model" type="xs:string"/>
+                <xs:element name="FirmwareVersion" type="xs:string"/>
+                <xs:element name="SerialNumber" type="xs:string"/>
+                <xs:element name="HardwareId" type="xs:string"/>
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element>
+
+    <xs:element name="GetSystemDateAndTimeResponse">
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="SystemDateAndTime" type="xs:anyType"/>
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element>
+
+    <xs:element name="GetCapabilitiesResponse">
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="Capabilities" type="xs:anyType"/>
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element>
+
+    <xs:element name="GetServicesResponse">
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="Service" type="xs:anyType" maxOccurs="unbounded"/>
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element>
+
+    <xs:element name="GetProfilesResponse" type="xs:anyType"/>
+    <xs:element name="GetStreamUriResponse" type="xs:anyType"/>
+    <xs:element name="GetSnapshotUriResponse" type="xs:anyType"/>
+    <xs:element name="GetVideoSourcesResponse" type="xs:anyType"/>
+    <xs:element name="GetVideoSourceConfigurationResponse" type="xs:anyType"/>
+    <xs:element name="GetVideoEncoderConfigurationResponse" type="xs:anyType"/>
+
+</xs:schema>

@@ -1,0 +1,118 @@
+const fs = require("fs");
+const yaml = require("js-yaml");
+const logger = require("./log-manager");
+
+function loadConfig(configPath) {
+    if (!fs.existsSync(configPath)) {
+        throw new Error(`Config file not found at ${configPath}`);
+    }
+
+    let raw;
+    try {
+        raw = fs.readFileSync(configPath, "utf8");
+    } catch (err) {
+        throw new Error(`Failed to read config file: ${err.message}`);
+    }
+
+    let config;
+    try {
+        config = yaml.load(raw);
+    } catch (err) {
+        logger.error(`Failed to parse config file as YAML: ${err.message}`);
+        throw new Error(`Failed to parse YAML: ${err.message}`);
+    }
+
+    // Validate top-level structure
+    if (!config.host_sources || !Array.isArray(config.host_sources)) {
+        throw new Error("Config must contain 'host_sources' as an array.");
+    }
+
+    if (!config.virtual_cameras || !Array.isArray(config.virtual_cameras)) {
+        throw new Error("Config must contain 'virtual_cameras' as an array.");
+    }
+
+    // Build host source lookup map
+    const sourcesByName = {};
+    for (const src of config.host_sources) {
+        validateHostSource(src);
+
+        sourcesByName[src.name] = {
+            hostname: src.hostname,
+            rtsp_port: src.rtsp_port,
+            http_port: src.http_port,
+            auth: {
+                username: src.auth.username,
+                password: src.auth.password
+            }
+        };
+    }
+
+    // Resolve virtual cameras
+    const cameras = config.virtual_cameras.map((cam) => {
+        validateVirtualCamera(cam);
+
+        const source = sourcesByName[cam.host_source];
+        if (!source) {
+            throw new Error(
+                `Virtual camera '${cam.name}' references unknown host_source '${cam.host_source}'.`
+            );
+        }
+
+        // Normalize MAC
+        const mac = cam.mac.toLowerCase();
+
+        // Ensure paths start with '/'
+        const rtspPath = cam.rtsp_path.startsWith("/")
+            ? cam.rtsp_path
+            : `/${cam.rtsp_path}`;
+
+        const snapshotPath = cam.snapshot_path.startsWith("/")
+            ? cam.snapshot_path
+            : `/${cam.snapshot_path}`;
+
+        // Construct full URLs
+        const rtspUrl = `rtsp://${source.auth.username}:${source.auth.password}` +
+                        `@${source.hostname}:${source.rtsp_port}${rtspPath}`;
+
+        const snapshotUrl = `http://${source.hostname}:${source.http_port}${snapshotPath}`;
+
+        return {
+            name: cam.name,
+            model: cam.model,
+            mac,
+            rtspUrl,
+            snapshotUrl,
+            host: {
+                hostname: source.hostname,
+                rtsp_port: source.rtsp_port,
+                http_port: source.http_port
+            }
+        };
+    });
+
+    return { cameras };
+}
+
+function validateHostSource(src) {
+    const required = ["name", "hostname", "rtsp_port", "http_port", "auth"];
+    for (const key of required) {
+        if (!src[key]) {
+            throw new Error(`host_source missing required field '${key}'.`);
+        }
+    }
+
+    if (!src.auth.username || !src.auth.password) {
+        throw new Error("host_source.auth must contain username and password.");
+    }
+}
+
+function validateVirtualCamera(cam) {
+    const required = ["name", "model", "mac", "host_source", "rtsp_path", "snapshot_path"];
+    for (const key of required) {
+        if (!cam[key]) {
+            throw new Error(`virtual_camera missing required field '${key}'.`);
+        }
+    }
+}
+
+module.exports = { loadConfig };

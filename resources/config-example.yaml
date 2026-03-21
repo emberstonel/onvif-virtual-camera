@@ -1,0 +1,38 @@
+host_sources:
+  - name: cam1
+    hostname: 192.168.1.50
+    rtsp_port: 554
+    http_port: 80
+    auth:
+      username: admin
+      password: password123
+
+  - name: cam2
+    hostname: 192.168.1.51
+    rtsp_port: 554
+    http_port: 80
+    auth:
+      username: admin
+      password: password123
+
+virtual_cameras:
+  - name: VirtualCam1
+    model: "VCam-1080p"
+    mac: "02:42:ac:11:00:11"
+    host_source: cam1
+    rtsp_path: "/live1"
+    snapshot_path: "/snapshot1.jpg"
+
+  - name: VirtualCam2
+    model: "VCam-1080p"
+    mac: "02:42:ac:11:00:12"
+    host_source: cam1
+    rtsp_path: "/live2"
+    snapshot_path: "/snapshot2.jpg"
+
+  - name: VirtualCam3
+    model: "VCam-1080p"
+    mac: "02:42:ac:11:00:13"
+    host_source: cam2
+    rtsp_path: "/live"
+    snapshot_path: "/snapshot.jpg"

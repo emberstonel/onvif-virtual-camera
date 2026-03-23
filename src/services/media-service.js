@@ -83,4 +83,10 @@ class MediaService {
                 $: { token: this.videoSourceToken },
                 Name: "VideoSourceConfig",
                 UseCount: 1,
-                SourceToken: this.videoSourceToken,
+                SourceToken: this.videoSourceToken
+            }
+        };
+    }
+}
+
+module.exports = MediaService;

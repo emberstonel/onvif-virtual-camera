@@ -13,7 +13,7 @@ async function start() {
     let config;
     try {
         config = configLoader.loadConfig(configPath);
-        logger.info(`Loaded configuration for ${config.virtual_cameras.length} virtual cameras`);
+        logger.info(`Loaded configuration for ${config.cameras.length} virtual cameras`);
     } catch (err) {
         logger.error(`Failed to load config: ${err.message}`);
         process.exit(1);

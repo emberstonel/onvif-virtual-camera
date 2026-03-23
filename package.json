@@ -13,9 +13,10 @@
     "start": "node main.js"
   },
   "dependencies": {
+    "js-yaml": "^4.1.1",
+    "simple-node-logger": "^21.8.12",
     "soap": "1.1.5",
     "xml2js": "0.4.23",
-    "yaml": "2.5.1",
-    "simple-node-logger": "^21.8.12"
+    "yaml": "2.5.1"
   }
 }

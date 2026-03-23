@@ -31,6 +31,70 @@ The container can run multiple virtual cameras, each bound to a unique MacVLAN i
 
 ---
 
+## Getting Started
+
+- Create a `config.yaml` defining your virtual cameras.
+- Run the `macvlan-init.sh` script to create the required macvlan interfaces.
+- Build the Docker image for the ONVIF proxy.
+- Run the container and mount your `config.yaml` into `/config.yaml`.
+- Add each virtual camera to UnFi Protect.
+
+---
+
+# Configuration File (`config.yaml`)
+
+Paths for the virtual cameras are relative to the "hostname" entered as a host source. This file must be mounted into the container root as:
+
+```
+/config.yaml
+```
+
+A complete example:
+
+```yaml
+host_sources:
+  - name: cam1
+    hostname: 192.168.1.50
+    rtsp_port: 554
+    http_port: 80
+    auth:
+      username: admin
+      password: password123
+
+  - name: cam2
+    hostname: 192.168.1.51
+    rtsp_port: 554
+    http_port: 80
+    auth:
+      username: admin
+      password: password123
+
+virtual_cameras:
+  - name: VirtualCam1
+    model: "VCam-1080p"
+    mac: "02:42:ac:11:00:11"
+    host_source: cam1
+    rtsp_path: "/live1"
+    snapshot_path: "/snapshot1.jpg"
+
+  - name: VirtualCam2
+    model: "VCam-1080p"
+    mac: "02:42:ac:11:00:12"
+    host_source: cam1
+    rtsp_path: "/live2"
+    snapshot_path: "/snapshot2.jpg"
+
+  - name: VirtualCam3
+    model: "VCam-1080p"
+    mac: "02:42:ac:11:00:13"
+    host_source: cam2
+    rtsp_path: "/live"
+    snapshot_path: "/snapshot.jpg"
+```
+
+---
+
+
 ## MacVLAN Setup (Required)
 
 Each virtual camera must appear on the network as a **unique MAC + IP**.  
@@ -155,56 +219,3 @@ docker logs -f onvif-proxy
 3. TBD
 4. TBD
 5. TBD
-
----
-
-# Configuration File (`config.yaml`)
-
-This file must be mounted into the container root as:
-
-```
-/config.yaml
-```
-
-A complete example:
-
-```yaml
-host_sources:
-  - name: cam1
-    hostname: 192.168.1.50
-    rtsp_port: 554
-    http_port: 80
-    auth:
-      username: admin
-      password: password123
-
-  - name: cam2
-    hostname: 192.168.1.51
-    rtsp_port: 554
-    http_port: 80
-    auth:
-      username: admin
-      password: password123
-
-virtual_cameras:
-  - name: VirtualCam1
-    model: "VCam-1080p"
-    mac: "02:42:ac:11:00:11"
-    host_source: cam1
-    rtsp_path: "/live1"
-    snapshot_path: "/snapshot1.jpg"
-
-  - name: VirtualCam2
-    model: "VCam-1080p"
-    mac: "02:42:ac:11:00:12"
-    host_source: cam1
-    rtsp_path: "/live2"
-    snapshot_path: "/snapshot2.jpg"
-
-  - name: VirtualCam3
-    model: "VCam-1080p"
-    mac: "02:42:ac:11:00:13"
-    host_source: cam2
-    rtsp_path: "/live"
-    snapshot_path: "/snapshot.jpg"
-```

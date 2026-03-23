@@ -20,7 +20,7 @@ async function start() {
     }
 
     // Start one ONVIF server per virtual camera
-    for (const cam of config.virtual_cameras) {
+    for (const cam of config.cameras) {
         try {
             logger.info(`Initializing virtual camera: ${cam.name}`);
 
@@ -45,8 +45,8 @@ async function start() {
                 name: cam.name,
                 ip,
                 port: cam.port || 80,
-                rtsp: cam.rtsp,
-                snapshot: cam.snapshot
+                rtspUrl: cam.rtspUrl,
+                snapshotUrl: cam.snapshotUrl
             });
 
             await server.start();

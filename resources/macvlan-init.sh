@@ -112,8 +112,8 @@ if [[ ! -d "$SYSTEMD_NET_DIR" ]]; then
 fi
 
 # Extract names + MACs from config.yaml
-mapfile -t NAMES < <(yq '.virtual_cameras[].name' "$CONFIG_PATH")
-mapfile -t MACS  < <(yq '.virtual_cameras[].mac'  "$CONFIG_PATH")
+mapfile -t NAMES < <(yq -r '.virtual_cameras[].name' "$CONFIG_PATH")
+mapfile -t MACS  < <(yq -r '.virtual_cameras[].mac'  "$CONFIG_PATH")
 
 COUNT=${#NAMES[@]}
 

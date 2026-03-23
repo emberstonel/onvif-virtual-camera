@@ -98,7 +98,7 @@ virtual_cameras:
 ## MacVLAN Setup (Required)
 
 Each virtual camera must appear on the network as a **unique MAC + IP**.  
-This project includes a helper script that automates creation and persistence of these interfaces using **systemd‑networkd** which is available on most common Linux distributions (Ubuntu, Debian, Arch, Fedora, etc.).
+This project includes a helper script that automates creation and persistence of these interfaces using **systemd‑networkd** which is available on most common Linux distributions (Ubuntu, Debian, Arch, Fedora, etc.). Feel free to complete the MacVLAN setup yourself if preferred.
 
 The script performs:
 
@@ -111,6 +111,8 @@ The script performs:
 
 This makes it easy to rebuild interfaces when changing MACs or when UniFi Protect gets “stuck” on a previous adoptions.
 
+> **NOTE:** The script requires the YAML parser `yq` to be installed on the host system. This can be done via `apt install yq`
+
 ---
 
 ### Running the Script
@@ -122,7 +124,7 @@ docker cp onvif-proxy:/resources/macvlan-init.sh ./macvlan-init.sh
 chmod +x ./macvlan-init.sh
 ```
 
-The script requires:
+Arguments expected by this script:
 
 - The path to your config.yaml
 - A parent interface (e.g., `eth0`, `eno1`, `enp3s0`)  

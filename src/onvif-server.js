@@ -2,8 +2,8 @@ const http = require("http");
 const soap = require("soap");
 const path = require("path");
 const logger = require("./log-manager");
-const DeviceService = require("./onvif/device-service");
-const MediaService = require("./onvif/media-service");
+const DeviceService = require("./services/device-service");
+const MediaService = require("./services/media-service");
 
 class OnvifServer {
     constructor({ name, ip, port, rtsp, snapshot }) {

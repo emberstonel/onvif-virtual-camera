@@ -124,6 +124,7 @@ chmod +x ./macvlan-init.sh
 
 The script requires:
 
+- The path to your config.yaml
 - A parent interface (e.g., `eth0`, `eno1`, `enp3s0`)  
 - A mode (`dhcp` or `static`)  
 - Optional static IPs  
@@ -138,13 +139,14 @@ This is the simplest and most common setup.
 
 ```bash
 sudo ./resources/macvlan-init.sh \
+    --config "/opt/onvif-server/config.yaml" \
     --parent eth0 \
     --mode dhcp
 ```
 
 The script will:
 
-- Read all virtual cameras from `/config.yaml`
+- Read all virtual cameras from your `/config.yaml`
 - Create `vcam-<name>` interfaces
 - Assign MAC addresses
 - Request DHCP leases
@@ -159,6 +161,7 @@ If you prefer static IPs, provide them in the same order the virtual cameras app
 
 ```bash
 sudo ./resources/macvlan-init.sh \
+    --config "/opt/onvif-server/config.yaml" \
     --parent eth0 \
     --mode static \
     --ips 192.168.10.11,192.168.10.12

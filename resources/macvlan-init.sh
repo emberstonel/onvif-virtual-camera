@@ -183,7 +183,6 @@ for i in "${!NAMES[@]}"; do
 
         if [[ "$EXISTING_MAC" == "${MAC,,}" ]]; then
             echo "[INFO] $IFACE already exists with correct MAC ($EXISTING_MAC); skipping recreation"
-            INTERFACES+=("$IFACE")
             continue
         else
             echo "[INFO] $IFACE exists but MAC differs ($EXISTING_MAC != $MAC); recreating"
@@ -251,12 +250,35 @@ else
     echo "[WARN] systemd-networkd is not available; persistence files are written but not applied automatically"
 fi
 
-for IFACE in "${INTERFACES[@]}"; do
-    IP=$(ip -4 addr show "$IFACE" | awk '/inet / {print $2}')
-    if [[ -n "$IP" ]]; then
-        echo "[INFO] $IFACE is up with IP $IP"
+echo "[INFO] Verifying interface IP assignments..."
+
+for i in "${!INTERFACES[@]}"; do
+    IFACE="${INTERFACES[$i]}"
+
+    # DHCP mode: wait for IP
+    if [[ "$MODE" == "dhcp" ]]; then
+        for attempt in {1..10}; do
+            IP=$(ip -4 addr show "$IFACE" | awk '/inet / {print $2}')
+            if [[ -n "$IP" ]]; then
+                echo "[INFO] $IFACE is up with IP $IP"
+                break
+            fi
+
+            if [[ $attempt -eq 10 ]]; then
+                echo "[WARN] $IFACE has no IPv4 address after timeout"
+            else
+                sleep 1
+            fi
+        done
+
+    # Static mode: immediate verification
     else
-        echo "[WARN] $IFACE exists but has no IPv4 address"
+        IP=$(ip -4 addr show "$IFACE" | awk '/inet / {print $2}')
+        if [[ -n "$IP" ]]; then
+            echo "[INFO] $IFACE is up with IP $IP"
+        else
+            echo "[WARN] $IFACE exists but has no IPv4 address"
+        fi
     fi
 done
 

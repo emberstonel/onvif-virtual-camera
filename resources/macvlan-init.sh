@@ -83,7 +83,7 @@ cleanup_vcams() {
 
     # Delete systemd network files
     if [[ -d "$SYSTEMD_NET_DIR" ]]; then
-        for FILE in "$SYSTEMD_NET_DIR"/vcam-*.netdev "$SYSTEMD_NET_DIR"/vcam-*.network; do
+        for FILE in "$SYSTEMD_NET_DIR"/001-vcam-*.netdev "$SYSTEMD_NET_DIR"/002-vcam-*.network; do
             [[ -e "$FILE" ]] || continue
             echo "[INFO] Removing $FILE"
             rm -f "$FILE"
@@ -203,8 +203,8 @@ for i in "${!NAMES[@]}"; do
         ip addr add "$IP/${PARENT_CIDR#*/}" dev "$IFACE"
     fi
 
-    NETDEV_FILE="$SYSTEMD_NET_DIR/vcam-${NAME}.netdev"
-    NETWORK_FILE="$SYSTEMD_NET_DIR/vcam-${NAME}.network"
+    NETDEV_FILE="$SYSTEMD_NET_DIR/001-vcam-${NAME}.netdev"
+    NETWORK_FILE="$SYSTEMD_NET_DIR/002-vcam-${NAME}.network"
 
     echo "[INFO] Writing $NETDEV_FILE"
     cat > "$NETDEV_FILE" <<EOF

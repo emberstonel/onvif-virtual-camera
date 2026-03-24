@@ -90,6 +90,14 @@ cleanup_vcams() {
         done
     fi
 
+    # Remove parent drop-in directory
+    PARENT_DROPIN_DIR="$SYSTEMD_NET_DIR/${PARENT_IFACE}.network.d"
+    if [[ -d "$PARENT_DROPIN_DIR" ]]; then
+        echo "[INFO] Removing drop-in directory $PARENT_DROPIN_DIR"
+        rm -rf "$PARENT_DROPIN_DIR"
+    fi
+
+
     # Reload systemd-networkd if present
     if is_networkd_available; then
         echo "[INFO] Reloading systemd-networkd"
@@ -245,6 +253,20 @@ Gateway=$PARENT_GW
 EOF
     fi
 done
+
+PARENT_DROPIN_DIR="$SYSTEMD_NET_DIR/${PARENT_IFACE}.network.d"
+mkdir -p "$PARENT_DROPIN_DIR"
+
+DROPIN_FILE="$PARENT_DROPIN_DIR/onvif-macvlan.conf"
+
+echo "[INFO] Writing parent drop-in: $DROPIN_FILE"
+{
+    echo "[Network]"
+    for IFACE in "${INTERFACES[@]}"; do
+        echo "MACVLAN=$IFACE"
+    done
+} > "$DROPIN_FILE"
+
 
 if is_networkd_available; then
     echo "[INFO] Restarting systemd-networkd to apply persistent config"

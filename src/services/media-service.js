@@ -1,9 +1,8 @@
 const logger = require("../log-manager");
 
 class MediaService {
-    constructor({ rtspUrl, snapshotUrl }) {
-        this.rtspUrl = rtspUrl;
-        this.snapshotUrl = snapshotUrl;
+    constructor(camera) {
+        this.camera = camera;
 
         // Protect expects exactly one profile with predictable tokens
         this.profileToken = "profile_1";
@@ -43,7 +42,7 @@ class MediaService {
     async GetStreamUri() {
         return {
             MediaUri: {
-                Uri: this.rtspUrl,
+                Uri: this.camera.rtspUrl,
                 InvalidAfterConnect: false,
                 InvalidAfterReboot: false,
                 Timeout: "PT60S"
@@ -55,7 +54,7 @@ class MediaService {
     async GetSnapshotUri() {
         return {
             MediaUri: {
-                Uri: this.snapshotUrl,
+                Uri: this.camera.snapshotUrl,
                 InvalidAfterConnect: false,
                 InvalidAfterReboot: false,
                 Timeout: "PT60S"

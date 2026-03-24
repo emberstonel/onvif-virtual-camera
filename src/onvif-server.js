@@ -6,28 +6,11 @@ const DeviceService = require("./services/device-service");
 const MediaService = require("./services/media-service");
 
 class OnvifServer {
-    constructor({ name, ip, port, rtsp, snapshot }) {
-        this.name = name;
-        this.ip = ip;
-        this.port = port;
-        this.rtsp = rtsp;
-        this.snapshot = snapshot;
+    constructor(camera) {
+        this.camera = camera;
 
-        this.deviceService = new DeviceService({
-            name,
-            ip,
-            port,
-            rtsp,
-            snapshot
-        });
-
-        this.mediaService = new MediaService({
-            name,
-            ip,
-            port,
-            rtsp,
-            snapshot
-        });
+        this.deviceService = new DeviceService(camera);
+        this.mediaService = new MediaService(camera);
     }
 
     async start() {
@@ -51,8 +34,10 @@ class OnvifServer {
                 }
             };
 
-            server.listen(this.port, this.ip, () => {
-                logger.info(`HTTP listener ready for ${this.name} on ${this.ip}:${this.port}`);
+            server.listen(this.camera.onvifPort, this.camera.ip, () => {
+                logger.info(
+                    `HTTP listener ready for ${this.camera.name} on ${this.camera.ip}:${this.camera.onvifPort}`
+                );
 
                 soap.listen(server, "/onvif/device_service", deviceServiceDef, wsdlDevice);
                 soap.listen(server, "/onvif/media_service", mediaServiceDef, wsdlMedia);
@@ -61,7 +46,9 @@ class OnvifServer {
             });
 
             server.on("error", (err) => {
-                logger.error(`ONVIF server error for ${this.name}: ${err.message}`);
+                logger.error(
+                    `ONVIF server error for ${this.camera.name}: ${err.message}`
+                );
                 reject(err);
             });
         });

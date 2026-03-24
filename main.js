@@ -38,16 +38,24 @@ async function start() {
                 continue;
             }
 
+            // Build a unified camera object for this cam
+            const camera = {
+                name: cam.name,
+                model: cam.model,
+                mac: cam.mac,
+                interface: iface,
+                ip: ip,
+                onvifPort: 80,
+                rtspUrl: cam.rtspUrl,
+                snapshotUrl: cam.snapshotUrl,
+                host: cam.host
+            };
+
+
             logger.info(`Camera ${cam.name} bound to ${iface} with IP ${ip}`);
 
             // Start ONVIF server
-            const server = new OnvifServer({
-                name: cam.name,
-                ip,
-                port: cam.port || 80,
-                rtspUrl: cam.rtspUrl,
-                snapshotUrl: cam.snapshotUrl
-            });
+            const server = new OnvifServer(camera);
 
             await server.start();
             logger.info(`ONVIF server started for ${cam.name} at http://${ip}:${cam.port || 80}/onvif/device_service`);

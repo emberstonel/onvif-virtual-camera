@@ -1,21 +1,18 @@
 const logger = require("../log-manager");
 
 class DeviceService {
-    constructor({ name, model, mac, ip }) {
-        this.name = name;
-        this.model = model;
-        this.mac = mac.toLowerCase();
-        this.ip = ip;
+    constructor(camera) {
+        this.camera = camera;
     }
 
     // ONVIF: GetDeviceInformation
     async GetDeviceInformation() {
         return {
             Manufacturer: "VirtualCam",
-            Model: this.model,
+            Model: this.camera.model || this.camera.name,
             FirmwareVersion: "1.0",
-            SerialNumber: this.mac.replace(/:/g, "").toUpperCase(),
-            HardwareId: this.mac.replace(/:/g, "").toUpperCase()
+            SerialNumber: this.camera.mac.replace(/:/g, "").toUpperCase(),
+            HardwareId: this.camera.mac.replace(/:/g, "").toUpperCase()
         };
     }
 
@@ -49,10 +46,10 @@ class DeviceService {
         return {
             Capabilities: {
                 Device: {
-                    XAddr: `http://${this.ip}/onvif/device_service`
+                    XAddr: `http://${this.camera.ip}/onvif/device_service`
                 },
                 Media: {
-                    XAddr: `http://${this.ip}/onvif/media_service`
+                    XAddr: `http://${this.camera.ip}/onvif/media_service`
                 }
             }
         };
@@ -64,12 +61,12 @@ class DeviceService {
             Service: [
                 {
                     Namespace: "http://www.onvif.org/ver10/device/wsdl",
-                    XAddr: `http://${this.ip}/onvif/device_service`,
+                    XAddr: `http://${this.camera.ip}/onvif/device_service`,
                     Version: { Major: 1, Minor: 0 }
                 },
                 {
                     Namespace: "http://www.onvif.org/ver10/media/wsdl",
-                    XAddr: `http://${this.ip}/onvif/media_service`,
+                    XAddr: `http://${this.camera.ip}/onvif/media_service`,
                     Version: { Major: 1, Minor: 0 }
                 }
             ]

@@ -179,8 +179,16 @@ for i in "${!NAMES[@]}"; do
     echo "[INFO] Processing $IFACE (MAC $MAC)"
 
     if ip link show "$IFACE" &>/dev/null; then
-        echo "[INFO] Removing existing interface $IFACE"
-        ip link delete "$IFACE" || true
+        EXISTING_MAC=$(cat /sys/class/net/"$IFACE"/address)
+
+        if [[ "$EXISTING_MAC" == "${MAC,,}" ]]; then
+            echo "[INFO] $IFACE already exists with correct MAC ($EXISTING_MAC); skipping recreation"
+            INTERFACES+=("$IFACE")
+            continue
+        else
+            echo "[INFO] $IFACE exists but MAC differs ($EXISTING_MAC != $MAC); recreating"
+            ip link delete "$IFACE" || true
+        fi
     fi
 
     echo "[INFO] Creating interface $IFACE"

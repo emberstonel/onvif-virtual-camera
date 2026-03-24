@@ -7,8 +7,10 @@ MODE=""
 STATIC_IPS=()
 CLEANUP_ONLY=false
 
-RUNTIME_SCRIPT="/opt/onvif/macvlan-runtime.sh"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+RUNTIME_SCRIPT="$SCRIPT_DIR/macvlan-runtime.sh"
 SERVICE_FILE="/etc/systemd/system/onvif-macvlan.service"
+
 
 usage() {
     echo "Usage:"
@@ -53,7 +55,7 @@ if $CLEANUP_ONLY; then
     cleanup
     exit 0
 fi
-echo "[INFO] Processing config file `$CONFIG_PATH` using $PARENT_IFACE."
+echo "[INFO] Processing config file '$CONFIG_PATH' using $PARENT_IFACE."
 
 # Argument validation
 [[ -z "$CONFIG_PATH" ]] && { echo "Error: --config <path> is required"; usage; }

@@ -8,7 +8,7 @@ async function start() {
     logger.info("Starting ONVIF Virtual Camera Proxy...");
 
     // Load config.yaml from the mounted root path
-    const configPath = path.join("/", "config.yaml");
+    const configPath = path.join("/", "config.yml");
 
     let config;
     try {

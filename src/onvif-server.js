@@ -24,13 +24,13 @@ class OnvifServer {
 
             const deviceServiceDef = {
                 DeviceService: {
-                    DeviceService: this.deviceService.getServiceDefinition()
+                    DeviceService: this.deviceService.GetServiceDefinition()
                 }
             };
 
             const mediaServiceDef = {
                 MediaService: {
-                    MediaService: this.mediaService.getServiceDefinition()
+                    MediaService: this.mediaService.GetServiceDefinition()
                 }
             };
 

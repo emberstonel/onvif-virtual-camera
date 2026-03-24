@@ -21,12 +21,22 @@ usage() {
 }
 
 cleanup() {
-    echo "[INFO] Removing runtime script and service"
+    echo "[INFO] Stopping systemd service if running..."
+    systemctl stop onvif-macvlan.service 2>/dev/null || true
 
+    echo "[INFO] Removing vcam-* interfaces..."
+    for IFACE in $(ip -o link show | awk -F': ' '/vcam-/ {print $2}'); do
+        echo "[INFO] Deleting interface $IFACE"
+        ip link delete "$IFACE" 2>/dev/null || true
+    done
+
+    echo "[INFO] Removing runtime script and service..."
     rm -f "$RUNTIME_SCRIPT" || true
     rm -f "$SERVICE_FILE" || true
 
+    echo "[INFO] Reloading systemd..."
     systemctl daemon-reload || true
+
     echo "[INFO] Cleanup complete."
 }
 

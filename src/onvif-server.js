@@ -1,9 +1,11 @@
+// src/onvif-server.js
 const http = require("http");
 const soap = require("soap");
 const path = require("path");
 const logger = require("./log-manager");
 const DeviceService = require("./services/device-service");
 const MediaService = require("./services/media-service");
+const DiscoveryService = require("./services/discovery-service");
 
 class OnvifServer {
     constructor(camera) {
@@ -11,6 +13,7 @@ class OnvifServer {
 
         this.deviceService = new DeviceService(camera);
         this.mediaService = new MediaService(camera);
+        this.discoveryService = new DiscoveryService(camera);
     }
 
     async start() {
@@ -34,13 +37,21 @@ class OnvifServer {
                 }
             };
 
-            server.listen(this.camera.onvifPort, this.camera.ip, () => {
+            server.listen(this.camera.onvifPort, this.camera.ip, async () => {
                 logger.info(
                     `HTTP listener ready for ${this.camera.name} on ${this.camera.ip}:${this.camera.onvifPort}`
                 );
 
                 soap.listen(server, "/onvif/device_service", deviceServiceDef, wsdlDevice);
                 soap.listen(server, "/onvif/media_service", mediaServiceDef, wsdlMedia);
+
+                try {
+                    await this.discoveryService.start();
+                } catch (err) {
+                    logger.error(
+                        `Failed to start WS-Discovery for ${this.camera.name}: ${err.message}`
+                    );
+                }
 
                 resolve();
             });

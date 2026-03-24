@@ -1,15 +1,33 @@
-FROM node:20-slim
+# -------------------------
+# Stage 1: Base runtime
+# -------------------------
+FROM node:20-alpine AS base
 
 WORKDIR /app
+COPY package*.json ./
+RUN npm install --omit=dev
+COPY . .
 
-# Install only production dependencies
-COPY package.json package-lock.json* ./
-RUN npm install --production
+# -------------------------
+# Stage 2: Development image
+# -------------------------
+FROM base AS dev
 
-# Copy application code
-COPY main.js ./
-COPY src ./src
-COPY resources ./resources
+# Install useful tools
+RUN apk add --no-cache \
+    bash \
+    curl \
+    iproute2 \
+    busybox-extras \
+    bind-tools \
+    net-tools
 
-# Config is mounted at runtime as /config.yaml
+# Default shell for exec
+CMD ["bash"]
+
+# -------------------------
+# Stage 3: Production image
+# -------------------------
+FROM base AS prod
+
 CMD ["node", "main.js"]

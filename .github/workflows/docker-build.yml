@@ -1,0 +1,35 @@
+name: Build onvif-server
+
+on:
+  push:
+    branches:
+      - 'main'
+      - 'develop'
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          target: ${{ github.ref_name == 'dev' && 'dev' || 'prod' }}
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/onvif-server:${{ github.ref_name }}
+            ghcr.io/${{ github.repository_owner }}/onvif-server:latest

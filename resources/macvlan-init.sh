@@ -76,7 +76,7 @@ cleanup_vcams() {
     echo "[INFO] Cleaning up vcam-* interfaces and systemd-networkd units"
 
     # Delete interfaces
-    for IFACE in $(ip -o link show | awk -F': ' '{print $2}' | grep '^vcam-' || true); do
+    for IFACE in $(ip -o link show | awk -F': ' '{print $2}' | sed 's/@.*//' | grep '^vcam-' || true); do
         echo "[INFO] Removing interface $IFACE"
         ip link delete "$IFACE" || true
     done

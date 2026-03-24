@@ -32,7 +32,7 @@ async function start() {
             }
 
             // Get assigned IP address
-            const ip = networkManager.getInterfaceIPv4(iface);
+            const ip = networkManager.getInterfaceIp(iface);
             if (!ip) {
                 logger.error(`Interface ${iface} has no IPv4 address (camera ${cam.name})`);
                 continue;

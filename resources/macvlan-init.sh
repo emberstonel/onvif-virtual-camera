@@ -149,7 +149,7 @@ echo "[INFO] Creating $COUNT MacVLAN interfaces on parent '$PARENT_IFACE'"
 echo "[INFO] systemd-networkd persistence in $SYSTEMD_NET_DIR"
 
 for i in "${!NAMES[@]}"; do
-    NAME="${NAMES[$i]}"
+    NAME="$((i+1))"
     MAC="${MACS[$i]}"
     IFACE="vcam-${NAME}"
 

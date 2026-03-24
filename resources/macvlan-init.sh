@@ -21,10 +21,9 @@ usage() {
 }
 
 # Validate systemd-networkd is available
-if ! systemctl is-active --quiet systemd-networkd; then
-    echo "[ERROR] systemd-networkd is not running."
+if ! is_networkd_available; then
+    echo "[ERROR] systemd-networkd is not running or socket-activated."
     echo "[ERROR] DHCP and persistence will NOT work."
-    echo "[ERROR] Start it with: sudo systemctl start systemd-networkd"
     exit 1
 fi
 
@@ -59,6 +58,18 @@ while [[ $# -gt 0 ]]; do
 done
 
 SYSTEMD_NET_DIR="/etc/systemd/network"
+
+is_networkd_available() {
+    # systemd-networkd is valid if:
+    #   - the service is active, OR
+    #   - the socket is active (socket-activated mode)
+    if systemctl is-active --quiet systemd-networkd || \
+       systemctl is-active --quiet systemd-networkd.socket; then
+        return 0
+    else
+        return 1
+    fi
+}
 
 cleanup_vcams() {
     echo "[INFO] Cleaning up vcam-* interfaces and systemd-networkd units"
@@ -181,8 +192,6 @@ for i in "${!NAMES[@]}"; do
         ip addr add "$IP/${PARENT_CIDR#*/}" dev "$IFACE"
     fi
 
-    ip -4 addr show "$IFACE" | grep inet || echo "[WARN] No IPv4 address assigned to $IFACE"
-
     NETDEV_FILE="$SYSTEMD_NET_DIR/vcam-${NAME}.netdev"
     NETWORK_FILE="$SYSTEMD_NET_DIR/vcam-${NAME}.network"
 
@@ -223,11 +232,12 @@ EOF
     fi
 done
 
-if systemctl list-unit-files | grep -q systemd-networkd.service; then
+if is_networkd_available; then
     echo "[INFO] Restarting systemd-networkd to apply persistent config"
     systemctl restart systemd-networkd || echo "[WARN] Failed to restart systemd-networkd"
 else
-    echo "[WARN] systemd-networkd.service not found; persistence files are written but not applied automatically"
+    echo "[WARN] systemd-networkd is not available; persistence files are written but not applied automatically"
 fi
+
 
 echo "[INFO] MacVLAN setup complete."

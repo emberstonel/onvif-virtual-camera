@@ -91,7 +91,7 @@ cleanup_vcams() {
     fi
 
     # Reload systemd-networkd if present
-    if systemctl list-unit-files | grep -q systemd-networkd.service; then
+    if is_networkd_available; then
         echo "[INFO] Reloading systemd-networkd"
         systemctl restart systemd-networkd || echo "[WARN] Failed to restart systemd-networkd"
     fi
@@ -168,10 +168,13 @@ echo "[INFO] Using config: $CONFIG_PATH"
 echo "[INFO] Creating $COUNT MacVLAN interfaces on parent '$PARENT_IFACE'"
 echo "[INFO] systemd-networkd persistence in $SYSTEMD_NET_DIR"
 
+INTERFACES=()
+
 for i in "${!NAMES[@]}"; do
     NAME="$((i+1))"
     MAC="${MACS[$i]}"
     IFACE="vcam-${NAME}"
+    INTERFACES+=("$IFACE")
 
     echo "[INFO] Processing $IFACE (MAC $MAC)"
 
@@ -235,10 +238,18 @@ done
 
 if is_networkd_available; then
     echo "[INFO] Restarting systemd-networkd to apply persistent config"
-    systemctl restart systemd-networkd || echo "[WARN] Failed to restart systemd-networkd"
+    networkctl reload || echo "[WARN] Failed to reload systemd-networkd"
 else
     echo "[WARN] systemd-networkd is not available; persistence files are written but not applied automatically"
 fi
 
+for IFACE in "${INTERFACES[@]}"; do
+    IP=$(ip -4 addr show "$IFACE" | awk '/inet / {print $2}')
+    if [[ -n "$IP" ]]; then
+        echo "[INFO] $IFACE is up with IP $IP"
+    else
+        echo "[WARN] $IFACE exists but has no IPv4 address"
+    fi
+done
 
 echo "[INFO] MacVLAN setup complete."

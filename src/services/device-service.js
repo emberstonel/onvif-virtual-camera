@@ -72,6 +72,16 @@ class DeviceService {
             ]
         };
     }
+
+    GetServiceDefinition() {
+        return {
+            GetDeviceInformation: this.GetDeviceInformation.bind(this),
+            GetSystemDateAndTime: this.GetSystemDateAndTime.bind(this),
+            GetCapabilities: this.GetCapabilities.bind(this),
+            GetServices: this.GetServices.bind(this)
+        };
+    }
+
 }
 
 module.exports = DeviceService;

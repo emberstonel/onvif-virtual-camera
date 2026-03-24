@@ -86,6 +86,17 @@ class MediaService {
             }
         };
     }
+
+    GetServiceDefinition() {
+        return {
+            GetProfiles: this.GetProfiles.bind(this),
+            GetStreamUri: this.GetStreamUri.bind(this),
+            GetSnapshotUri: this.GetSnapshotUri.bind(this),
+            GetVideoSources: this.GetVideoSources.bind(this),
+            GetVideoSourceConfiguration: this.GetVideoSourceConfiguration.bind(this)
+        };
+    }
+
 }
 
 module.exports = MediaService;

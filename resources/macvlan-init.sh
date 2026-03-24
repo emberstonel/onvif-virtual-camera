@@ -6,39 +6,37 @@ PARENT_IFACE=""
 MODE=""
 STATIC_IPS=()
 CLEANUP_ONLY=false
-PARENT_NETWORK_FILE=""   # NEW: global variable
+
+RUNTIME_SCRIPT="/opt/onvif/macvlan-runtime.sh"
+SERVICE_FILE="/etc/systemd/system/onvif-macvlan.service"
 
 usage() {
     echo "Usage:"
     echo "  $0 --config <path> --parent <iface> --mode dhcp"
+    echo "  $0 --config <path> --parent <iface> --mode static --ips ip1,ip2,ip3"
     echo "  $0 --cleanup"
     exit 1
 }
 
-# Validation function for networkd
-is_networkd_available() {
-    if systemctl is-active --quiet systemd-networkd || \
-       systemctl is-active --quiet systemd-networkd.socket; then
-        return 0
-    else
-        return 1
-    fi
+cleanup() {
+    echo "[INFO] Removing runtime script and service"
+
+    rm -f "$RUNTIME_SCRIPT" || true
+    rm -f "$SERVICE_FILE" || true
+
+    systemctl daemon-reload || true
+    echo "[INFO] Cleanup complete."
 }
 
-# Detect actual parent .network file
-get_parent_network_file() {
-    local file
-    file=$(basename "$(readlink -f "$SYSTEMD_NET_DIR"/*-"$PARENT_IFACE".network 2>/dev/null || true)")
-    if [[ -z "$file" ]]; then
-        return 1
-    fi
-    echo "$file"
-    return 0
-}
+if $CLEANUP_ONLY; then
+    cleanup
+    exit 0
+fi
 
-# Validate networkd is active
-if ! is_networkd_available; then
-    echo "[ERROR] systemd-networkd is not running."
+# Validate yq is available
+if ! command -v yq >/dev/null 2>&1; then
+    echo "Error: 'yq' is required but not installed."
+    echo "Install it with: sudo apt install yq (Debian/Ubuntu)"
     exit 1
 fi
 
@@ -54,66 +52,10 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-SYSTEMD_NET_DIR="/etc/systemd/network"
-PARENT_NETWORK_FILE=$(get_parent_network_file || true)
+# Argument validation
+[[ -z "$CONFIG_PATH" ]] && { echo "Error: --config <path> is required"; usage; }
+[[ ! -f "$CONFIG_PATH" ]] && { echo "Error: config file not found: $CONFIG_PATH"; exit 1; }
 
-if [[ -z "$PARENT_NETWORK_FILE" ]]; then
-    echo "[ERROR] Could not locate parent .network file for interface $PARENT_IFACE"
-    echo "[ERROR] Expected something like: /etc/systemd/network/10-$PARENT_IFACE.network"
-    exit 1
-fi
-
-cleanup_vcams() {
-    echo "[INFO] Cleaning up vcam-* interfaces and systemd-networkd units"
-
-    # Delete interfaces
-    for IFACE in $(ip -o link show | awk -F': ' '{print $2}' | sed 's/@.*//' | grep '^vcam-' || true); do
-        echo "[INFO] Removing interface $IFACE"
-        ip link delete "$IFACE" || true
-    done
-
-    # Delete systemd network files
-    if [[ -d "$SYSTEMD_NET_DIR" ]]; then
-        for FILE in "$SYSTEMD_NET_DIR"/001-vcam-*.netdev "$SYSTEMD_NET_DIR"/002-vcam-*.network; do
-            [[ -e "$FILE" ]] || continue
-            echo "[INFO] Removing $FILE"
-            rm -f "$FILE"
-        done
-    fi
-
-    # Remove correct parent drop-in directory
-    PARENT_DROPIN_DIR="$SYSTEMD_NET_DIR/${PARENT_NETWORK_FILE}.d"
-    if [[ -d "$PARENT_DROPIN_DIR" ]]; then
-        echo "[INFO] Removing drop-in directory $PARENT_DROPIN_DIR"
-        rm -rf "$PARENT_DROPIN_DIR"
-    fi
-
-    # Reload systemd-networkd
-    if is_networkd_available; then
-        echo "[INFO] Reloading systemd-networkd"
-        systemctl restart systemd-networkd || echo "[WARN] Failed to restart systemd-networkd"
-    fi
-
-    echo "[INFO] Cleanup complete."
-}
-
-if $CLEANUP_ONLY; then
-    cleanup_vcams
-    exit 0
-fi
-
-# REQUIRED: config path must be provided
-if [[ -z "$CONFIG_PATH" ]]; then
-    echo "Error: --config <path> is required"
-    usage
-fi
-
-if [[ ! -f "$CONFIG_PATH" ]]; then
-    echo "Error: config file not found: $CONFIG_PATH"
-    exit 1
-fi
-
-# Validate arguments for normal mode
 [[ -z "$PARENT_IFACE" ]] && { echo "Error: --parent is required"; usage; }
 [[ -z "$MODE" ]] && { echo "Error: --mode is required"; usage; }
 
@@ -121,10 +63,8 @@ if [[ "$MODE" != "dhcp" && "$MODE" != "static" ]]; then
     echo "Error: --mode must be 'dhcp' or 'static'"
     exit 1
 fi
-
-# Ensure systemd-networkd directory exists
-if [[ ! -d "$SYSTEMD_NET_DIR" ]]; then
-    echo "Error: systemd-networkd directory not found: $SYSTEMD_NET_DIR"
+if ! ip link show "$PARENT_IFACE" &>/dev/null; then
+    echo "Error: parent interface not found: $PARENT_IFACE"
     exit 1
 fi
 
@@ -141,7 +81,7 @@ if [[ "$MODE" == "static" ]]; then
     fi
 fi
 
-# Infer CIDR + gateway from parent interface for static mode
+# Infer CIDR and gateway from parent interface for static mode
 PARENT_CIDR=""
 PARENT_GW=""
 
@@ -155,125 +95,64 @@ if [[ "$MODE" == "static" ]]; then
     echo "[INFO] Static mode: using parent CIDR $PARENT_CIDR and gateway $PARENT_GW"
 fi
 
-echo "[INFO] Using config: $CONFIG_PATH"
-echo "[INFO] Creating $COUNT MacVLAN interfaces on parent '$PARENT_IFACE'"
-echo "[INFO] systemd-networkd persistence in $SYSTEMD_NET_DIR"
+# Create runtime script used by the service
+echo "[INFO] Generating runtime script: $RUNTIME_SCRIPT"
 
-INTERFACES=()
-
-for i in "${!NAMES[@]}"; do
-    NAME="$((i+1))"
-    MAC="${MACS[$i]}"
-    IFACE="vcam-${NAME}"
-    INTERFACES+=("$IFACE")
-
-    echo "[INFO] Processing $IFACE (MAC $MAC)"
-
-    if ip link show "$IFACE" &>/dev/null; then
-        EXISTING_MAC=$(cat /sys/class/net/"$IFACE"/address)
-        if [[ "$EXISTING_MAC" == "${MAC,,}" ]]; then
-            echo "[INFO] $IFACE already exists with correct MAC; skipping"
-            continue
-        else
-            echo "[INFO] $IFACE exists but MAC differs; recreating"
-            ip link delete "$IFACE" || true
-        fi
-    fi
-
-    echo "[INFO] Creating interface $IFACE"
-    ip link add "$IFACE" link "$PARENT_IFACE" type macvlan mode bridge
-    ip link set "$IFACE" address "$MAC"
-    ip link set "$IFACE" up
-
-    if [[ "$MODE" == "dhcp" ]]; then
-        echo "[INFO] DHCP will be used for $IFACE"
-    else
-        IP="${STATIC_IPS[$i]}"
-        echo "[INFO] Assigning static IP $IP to $IFACE"
-        ip addr add "$IP/${PARENT_CIDR#*/}" dev "$IFACE"
-    fi
-
-    NETDEV_FILE="$SYSTEMD_NET_DIR/001-vcam-${NAME}.netdev"
-    NETWORK_FILE="$SYSTEMD_NET_DIR/002-vcam-${NAME}.network"
-
-    echo "[INFO] Writing $NETDEV_FILE"
-    cat > "$NETDEV_FILE" <<EOF
-[Match]
-Name=$PARENT_IFACE
-
-[NetDev]
-Name=$IFACE
-Kind=macvlan
-
-[MACVLAN]
-Mode=bridge
-EOF
-
-    echo "[INFO] Writing $NETWORK_FILE"
-    if [[ "$MODE" == "dhcp" ]]; then
-        cat > "$NETWORK_FILE" <<EOF
-[Match]
-Name=$IFACE
-
-[Link]
-MACAddress=$MAC
-
-[Network]
-DHCP=yes
-EOF
-    else
-        cat > "$NETWORK_FILE" <<EOF
-[Match]
-Name=$IFACE
-
-[Link]
-MACAddress=$MAC
-
-[Network]
-Address=$IP/${PARENT_CIDR#*/}
-Gateway=$PARENT_GW
-EOF
-    fi
-done
-
-# Parent .network drop-in logic using detected filename
-PARENT_DROPIN_DIR="$SYSTEMD_NET_DIR/${PARENT_NETWORK_FILE}.d"
-mkdir -p "$PARENT_DROPIN_DIR"
-
-DROPIN_FILE="$PARENT_DROPIN_DIR/onvif-macvlan.conf"
-
-echo "[INFO] Writing parent drop-in: $DROPIN_FILE"
 {
-    echo "[Network]"
-    for IFACE in "${INTERFACES[@]}"; do
-        echo "MACVLAN=$IFACE"
+    echo "#!/usr/bin/env bash"
+    echo "set -euo pipefail"
+    echo ""
+    echo "PARENT_IFACE=\"$PARENT_IFACE\""
+    echo ""
+
+    for i in "${!NAMES[@]}"; do
+        NAME="$((i+1))"
+        MAC="${MACS[$i]}"
+        IFACE="vcam-${NAME}"
+
+        echo "# --- $IFACE ---"
+        echo "ip link delete \"$IFACE\" 2>/dev/null || true"
+        echo "ip link add \"$IFACE\" link \"\$PARENT_IFACE\" type macvlan mode bridge"
+        echo "ip link set \"$IFACE\" address \"$MAC\""
+        echo "ip link set \"$IFACE\" up"
+
+        if [[ "$MODE" == "static" ]]; then
+            IP="${STATIC_IPS[$i]}"
+            echo "ip addr add \"$IP/${PARENT_CIDR#*/}\" dev \"$IFACE\" || true"
+        fi
+
+        echo ""
     done
-} > "$DROPIN_FILE"
-
-# Restart network if required
-if is_networkd_available; then
-    echo "[INFO] Restarting systemd-networkd to apply persistent config"
-    networkctl reload || echo "[WARN] Failed to reload systemd-networkd"
-fi
-
-echo "[INFO] Verifying interface IP assignments..."
-
-for i in "${!INTERFACES[@]}"; do
-    IFACE="${INTERFACES[$i]}"
 
     if [[ "$MODE" == "dhcp" ]]; then
-        for attempt in {1..10}; do
-            IP=$(ip -4 addr show "$IFACE" | awk '/inet / {print $2}')
-            if [[ -n "$IP" ]]; then
-                echo "[INFO] $IFACE is up with IP $IP"
-                break
-            fi
-            [[ $attempt -eq 10 ]] && echo "[WARN] $IFACE has no IPv4 address after timeout" || sleep 1
-        done
-    else
-        IP=$(ip -4 addr show "$IFACE" | awk '/inet / {print $2}')
-        [[ -n "$IP" ]] && echo "[INFO] $IFACE is up with IP $IP" || echo "[WARN] $IFACE exists but has no IPv4 address"
+        echo "# DHCP mode: rely on system DHCP client"
+        echo "# If needed, uncomment:"
+        echo "# dhclient vcam-*"
     fi
-done
 
-echo "[INFO] MacVLAN setup complete."
+} > "$RUNTIME_SCRIPT"
+
+chmod +x "$RUNTIME_SCRIPT"
+
+# Create and start the service
+echo "[INFO] Writing systemd service: $SERVICE_FILE"
+
+{
+    echo "[Unit]"
+    echo "Description=Create MacVLAN interfaces for ONVIF virtual cameras"
+    echo "After=network-online.target"
+    echo "Wants=network-online.target"
+    echo ""
+    echo "[Service]"
+    echo "Type=oneshot"
+    echo "ExecStart=$RUNTIME_SCRIPT"
+    echo "RemainAfterExit=yes"
+    echo ""
+    echo "[Install]"
+    echo "WantedBy=multi-user.target"
+} > "$SERVICE_FILE"
+
+systemctl daemon-reload
+systemctl enable --now onvif-macvlan.service
+
+echo "[INFO] Setup complete."

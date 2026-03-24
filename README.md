@@ -98,14 +98,13 @@ virtual_cameras:
 ## MacVLAN Setup (Required)
 
 Each virtual camera must appear on the network as a **unique MAC + IP**.  
-This project includes a helper script that automates creation and persistence of these interfaces using **systemd‑networkd** which is available on most common Linux distributions (Ubuntu, Debian, Arch, Fedora, etc.). Feel free to complete the MacVLAN setup yourself if preferred.
+This project includes a helper script that automates creation and persistence of these interfaces which is should work on most common Linux distributions (Ubuntu, Debian, Arch, Fedora, etc.). Feel free to complete the MacVLAN setup yourself if preferred.
 
 The script performs:
 
 - Creation of `vcam-<name>` MacVLAN interfaces  
 - Assignment of MAC addresses from `config.yaml`  
 - DHCP or static IP assignment  
-- Generation of persistent `.netdev` and `.network` files under `/etc/systemd/network/`  
 - Immediate activation of the interfaces  
 - A cleanup mode to remove all vcam interfaces and persistence files  
 
@@ -117,10 +116,10 @@ This makes it easy to rebuild interfaces when changing MACs or when UniFi Protec
 
 ### Running the Script
 
-The script must be run **on the host**, not inside the container. It can be copied to your host system using the following (if your container name differs, adjust `onvif-proxy` accordingly):
+The script must be run **on the host**, not inside the container. It can be copied to your host system using the following (if your container name differs, adjust `onvif-server` accordingly):
 
 ```bash
-docker cp onvif-proxy:/resources/macvlan-init.sh ./macvlan-init.sh
+docker cp onvif-server:/resources/macvlan-init.sh ./macvlan-init.sh
 chmod +x ./macvlan-init.sh
 ```
 
@@ -187,7 +186,7 @@ services:
     build:
       context: .
       target: prod                        # use "dev" for troubleshooting / debugging
-    container_name: onvif
+    container_name: onvif-server
     network_mode: "host"
     restart: unless-stopped
     volumes:
@@ -212,9 +211,8 @@ docker compose up --build -d
 View logs:
 
 ```
-docker logs -f onvif-proxy
+docker logs -f onvif-server
 ```
-
 ---
 
 # Adding Cameras to UniFi Protect

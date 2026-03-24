@@ -23,7 +23,7 @@ RUN apk add --no-cache \
     net-tools
 
 # Default shell for exec
-CMD ["bash"]
+CMD ["node", "main.js"]
 
 # -------------------------
 # Stage 3: Production image

@@ -182,12 +182,12 @@ Static mode automatically:
 ## Docker Compose Example
 
 ```yaml
-version: "3.8"
-
 services:
-  onvif-proxy:
-    build: .
-    container_name: onvif-proxy
+  onvif-server:
+    build:
+      context: .
+      target: prod                        # use "dev" for troubleshooting / debugging
+    container_name: onvif
     network_mode: "host"
     restart: unless-stopped
     volumes:

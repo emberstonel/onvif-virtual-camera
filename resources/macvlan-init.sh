@@ -6,25 +6,17 @@ PARENT_IFACE=""
 MODE=""
 STATIC_IPS=()
 CLEANUP_ONLY=false
+PARENT_NETWORK_FILE=""   # NEW: global variable
 
 usage() {
     echo "Usage:"
     echo "  $0 --config <path> --parent <iface> --mode dhcp"
-    echo "  $0 --config <path> --parent <iface> --mode static --ips ip1,ip2,ip3"
-    echo "  $0 --cleanup"
-    echo
-    echo "Examples:"
-    echo "  $0 --config /opt/onvif-server/config.yaml --parent eth0 --mode dhcp"
-    echo "  $0 --config /opt/onvif-server/config.yaml --parent eno1 --mode static --ips 192.168.10.11,192.168.10.12"
     echo "  $0 --cleanup"
     exit 1
 }
 
 # Validation function for networkd
 is_networkd_available() {
-    # systemd-networkd is valid if:
-    #   - the service is active, OR
-    #   - the socket is active (socket-activated mode)
     if systemctl is-active --quiet systemd-networkd || \
        systemctl is-active --quiet systemd-networkd.socket; then
         return 0
@@ -33,44 +25,43 @@ is_networkd_available() {
     fi
 }
 
-# Validate networkd is active on this system
+# Detect actual parent .network file
+get_parent_network_file() {
+    local file
+    file=$(basename "$(readlink -f "$SYSTEMD_NET_DIR"/*-"$PARENT_IFACE".network 2>/dev/null || true)")
+    if [[ -z "$file" ]]; then
+        return 1
+    fi
+    echo "$file"
+    return 0
+}
+
+# Validate networkd is active
 if ! is_networkd_available; then
-    echo "[ERROR] systemd-networkd is not running or socket-activated."
-    echo "[ERROR] DHCP and persistence will NOT work."
+    echo "[ERROR] systemd-networkd is not running."
     exit 1
 fi
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --config)
-            CONFIG_PATH="${2:-}"
-            shift 2
-            ;;
-        --parent)
-            PARENT_IFACE="${2:-}"
-            shift 2
-            ;;
-        --mode)
-            MODE="${2:-}"
-            shift 2
-            ;;
-        --ips)
-            IFS=',' read -r -a STATIC_IPS <<< "${2:-}"
-            shift 2
-            ;;
-        --cleanup)
-            CLEANUP_ONLY=true
-            shift 1
-            ;;
-        *)
-            echo "Unknown argument: $1"
-            usage
-            ;;
+        --config) CONFIG_PATH="${2:-}"; shift 2 ;;
+        --parent) PARENT_IFACE="${2:-}"; shift 2 ;;
+        --mode) MODE="${2:-}"; shift 2 ;;
+        --ips) IFS=',' read -r -a STATIC_IPS <<< "${2:-}"; shift 2 ;;
+        --cleanup) CLEANUP_ONLY=true; shift 1 ;;
+        *) echo "Unknown argument: $1"; usage ;;
     esac
 done
 
 SYSTEMD_NET_DIR="/etc/systemd/network"
+PARENT_NETWORK_FILE=$(get_parent_network_file || true)
+
+if [[ -z "$PARENT_NETWORK_FILE" ]]; then
+    echo "[ERROR] Could not locate parent .network file for interface $PARENT_IFACE"
+    echo "[ERROR] Expected something like: /etc/systemd/network/10-$PARENT_IFACE.network"
+    exit 1
+fi
 
 cleanup_vcams() {
     echo "[INFO] Cleaning up vcam-* interfaces and systemd-networkd units"
@@ -90,15 +81,14 @@ cleanup_vcams() {
         done
     fi
 
-    # Remove parent drop-in directory
-    PARENT_DROPIN_DIR="$SYSTEMD_NET_DIR/${PARENT_IFACE}.network.d"
+    # Remove correct parent drop-in directory
+    PARENT_DROPIN_DIR="$SYSTEMD_NET_DIR/${PARENT_NETWORK_FILE}.d"
     if [[ -d "$PARENT_DROPIN_DIR" ]]; then
         echo "[INFO] Removing drop-in directory $PARENT_DROPIN_DIR"
         rm -rf "$PARENT_DROPIN_DIR"
     fi
 
-
-    # Reload systemd-networkd if present
+    # Reload systemd-networkd
     if is_networkd_available; then
         echo "[INFO] Reloading systemd-networkd"
         systemctl restart systemd-networkd || echo "[WARN] Failed to restart systemd-networkd"
@@ -135,7 +125,6 @@ fi
 # Ensure systemd-networkd directory exists
 if [[ ! -d "$SYSTEMD_NET_DIR" ]]; then
     echo "Error: systemd-networkd directory not found: $SYSTEMD_NET_DIR"
-    echo "This script assumes systemd-networkd is available and used for persistence."
     exit 1
 fi
 
@@ -147,7 +136,7 @@ COUNT=${#NAMES[@]}
 
 if [[ "$MODE" == "static" ]]; then
     if [[ ${#STATIC_IPS[@]} -ne $COUNT ]]; then
-        echo "Error: number of static IPs (${#STATIC_IPS[@]}) does not match number of cameras ($COUNT)"
+        echo "Error: number of static IPs does not match number of cameras"
         exit 1
     fi
 fi
@@ -158,16 +147,10 @@ PARENT_GW=""
 
 if [[ "$MODE" == "static" ]]; then
     PARENT_CIDR=$(ip -4 addr show "$PARENT_IFACE" | awk '/inet / {print $2}' | head -n1)
-    if [[ -z "$PARENT_CIDR" ]]; then
-        echo "Error: could not determine IPv4 address/prefix for parent interface $PARENT_IFACE"
-        exit 1
-    fi
+    [[ -z "$PARENT_CIDR" ]] && { echo "Error: could not determine IPv4 for $PARENT_IFACE"; exit 1; }
 
     PARENT_GW=$(ip route | awk -v dev="$PARENT_IFACE" '$1 == "default" && $5 == dev {print $3}' | head -n1)
-    if [[ -z "$PARENT_GW" ]]; then
-        echo "Error: could not determine default gateway for parent interface $PARENT_IFACE"
-        exit 1
-    fi
+    [[ -z "$PARENT_GW" ]] && { echo "Error: could not determine gateway for $PARENT_IFACE"; exit 1; }
 
     echo "[INFO] Static mode: using parent CIDR $PARENT_CIDR and gateway $PARENT_GW"
 fi
@@ -188,12 +171,11 @@ for i in "${!NAMES[@]}"; do
 
     if ip link show "$IFACE" &>/dev/null; then
         EXISTING_MAC=$(cat /sys/class/net/"$IFACE"/address)
-
         if [[ "$EXISTING_MAC" == "${MAC,,}" ]]; then
-            echo "[INFO] $IFACE already exists with correct MAC ($EXISTING_MAC); skipping recreation"
+            echo "[INFO] $IFACE already exists with correct MAC; skipping"
             continue
         else
-            echo "[INFO] $IFACE exists but MAC differs ($EXISTING_MAC != $MAC); recreating"
+            echo "[INFO] $IFACE exists but MAC differs; recreating"
             ip link delete "$IFACE" || true
         fi
     fi
@@ -254,7 +236,8 @@ EOF
     fi
 done
 
-PARENT_DROPIN_DIR="$SYSTEMD_NET_DIR/${PARENT_IFACE}.network.d"
+# Parent .network drop-in logic using detected filename
+PARENT_DROPIN_DIR="$SYSTEMD_NET_DIR/${PARENT_NETWORK_FILE}.d"
 mkdir -p "$PARENT_DROPIN_DIR"
 
 DROPIN_FILE="$PARENT_DROPIN_DIR/onvif-macvlan.conf"
@@ -267,12 +250,10 @@ echo "[INFO] Writing parent drop-in: $DROPIN_FILE"
     done
 } > "$DROPIN_FILE"
 
-
+# Restart network if required
 if is_networkd_available; then
     echo "[INFO] Restarting systemd-networkd to apply persistent config"
     networkctl reload || echo "[WARN] Failed to reload systemd-networkd"
-else
-    echo "[WARN] systemd-networkd is not available; persistence files are written but not applied automatically"
 fi
 
 echo "[INFO] Verifying interface IP assignments..."
@@ -280,7 +261,6 @@ echo "[INFO] Verifying interface IP assignments..."
 for i in "${!INTERFACES[@]}"; do
     IFACE="${INTERFACES[$i]}"
 
-    # DHCP mode: wait for IP
     if [[ "$MODE" == "dhcp" ]]; then
         for attempt in {1..10}; do
             IP=$(ip -4 addr show "$IFACE" | awk '/inet / {print $2}')
@@ -288,22 +268,11 @@ for i in "${!INTERFACES[@]}"; do
                 echo "[INFO] $IFACE is up with IP $IP"
                 break
             fi
-
-            if [[ $attempt -eq 10 ]]; then
-                echo "[WARN] $IFACE has no IPv4 address after timeout"
-            else
-                sleep 1
-            fi
+            [[ $attempt -eq 10 ]] && echo "[WARN] $IFACE has no IPv4 address after timeout" || sleep 1
         done
-
-    # Static mode: immediate verification
     else
         IP=$(ip -4 addr show "$IFACE" | awk '/inet / {print $2}')
-        if [[ -n "$IP" ]]; then
-            echo "[INFO] $IFACE is up with IP $IP"
-        else
-            echo "[WARN] $IFACE exists but has no IPv4 address"
-        fi
+        [[ -n "$IP" ]] && echo "[INFO] $IFACE is up with IP $IP" || echo "[WARN] $IFACE exists but has no IPv4 address"
     fi
 done
 

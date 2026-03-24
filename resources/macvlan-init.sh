@@ -20,6 +20,14 @@ usage() {
     exit 1
 }
 
+# Validate systemd-networkd is available
+if ! systemctl is-active --quiet systemd-networkd; then
+    echo "[ERROR] systemd-networkd is not running."
+    echo "[ERROR] DHCP and persistence will NOT work."
+    echo "[ERROR] Start it with: sudo systemctl start systemd-networkd"
+    exit 1
+fi
+
 # Parse arguments
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -166,8 +174,7 @@ for i in "${!NAMES[@]}"; do
     ip link set "$IFACE" up
 
     if [[ "$MODE" == "dhcp" ]]; then
-        echo "[INFO] Requesting DHCP for $IFACE"
-        dhclient -v "$IFACE" || echo "[WARN] DHCP failed for $IFACE"
+        echo "[INFO] DHCP will be used for $IFACE"
     else
         IP="${STATIC_IPS[$i]}"
         echo "[INFO] Assigning static IP $IP to $IFACE"

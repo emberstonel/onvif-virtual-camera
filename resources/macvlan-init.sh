@@ -33,6 +33,9 @@ if $CLEANUP_ONLY; then
     exit 0
 fi
 
+echo "[INFO] Starting macvlan-init helper..."
+echo "[INFO] Validating configurations."
+
 # Validate yq is available
 if ! command -v yq >/dev/null 2>&1; then
     echo "Error: 'yq' is required but not installed."
@@ -52,6 +55,11 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+echo "[INFO] Arguments received:"
+echo "       CONFIG_PATH = $CONFIG_PATH"
+echo "       PARENT_IFACE = $PARENT_IFACE"
+echo "       MODE = $MODE"
+
 # Argument validation
 [[ -z "$CONFIG_PATH" ]] && { echo "Error: --config <path> is required"; usage; }
 [[ ! -f "$CONFIG_PATH" ]] && { echo "Error: config file not found: $CONFIG_PATH"; exit 1; }
@@ -68,24 +76,27 @@ if ! ip link show "$PARENT_IFACE" &>/dev/null; then
     exit 1
 fi
 
+echo "[INFO] Reading virtual camera definitions from config."
+
 # Extract names + MACs from config.yaml
 mapfile -t NAMES < <(yq -r '.virtual_cameras[].name' "$CONFIG_PATH")
 mapfile -t MACS  < <(yq -r '.virtual_cameras[].mac'  "$CONFIG_PATH")
 
 COUNT=${#NAMES[@]}
-
-if [[ "$MODE" == "static" ]]; then
-    if [[ ${#STATIC_IPS[@]} -ne $COUNT ]]; then
-        echo "Error: number of static IPs does not match number of cameras"
-        exit 1
-    fi
-fi
+echo "[INFO] Found $COUNT virtual cameras in config."
 
 # Infer CIDR and gateway from parent interface for static mode
 PARENT_CIDR=""
 PARENT_GW=""
 
 if [[ "$MODE" == "static" ]]; then
+    if [[ ${#STATIC_IPS[@]} -ne $COUNT ]]; then
+        echo "Error: number of static IPs does not match number of cameras"
+        exit 1
+    fi
+    echo "[INFO] Static mode: ${#STATIC_IPS[@]} IPs provided."
+    echo "[INFO] Inferring network settings from parent interface $PARENT_IFACE..."
+
     PARENT_CIDR=$(ip -4 addr show "$PARENT_IFACE" | awk '/inet / {print $2}' | head -n1)
     [[ -z "$PARENT_CIDR" ]] && { echo "Error: could not determine IPv4 for $PARENT_IFACE"; exit 1; }
 
@@ -93,6 +104,8 @@ if [[ "$MODE" == "static" ]]; then
     [[ -z "$PARENT_GW" ]] && { echo "Error: could not determine gateway for $PARENT_IFACE"; exit 1; }
 
     echo "[INFO] Static mode: using parent CIDR $PARENT_CIDR and gateway $PARENT_GW"
+else
+    echo "[INFO] Setup continuing in DHCP mode."
 fi
 
 # Create runtime script used by the service
@@ -133,6 +146,7 @@ echo "[INFO] Generating runtime script: $RUNTIME_SCRIPT"
 } > "$RUNTIME_SCRIPT"
 
 chmod +x "$RUNTIME_SCRIPT"
+echo "[INFO] Runtime script created and marked executable."
 
 # Create and start the service
 echo "[INFO] Writing systemd service: $SERVICE_FILE"
@@ -152,7 +166,10 @@ echo "[INFO] Writing systemd service: $SERVICE_FILE"
     echo "WantedBy=multi-user.target"
 } > "$SERVICE_FILE"
 
+echo "[INFO] Reloading systemd..."
 systemctl daemon-reload
+
+echo "[INFO] Enabling and starting service..."
 systemctl enable --now onvif-macvlan.service
 
 echo "[INFO] Setup complete."

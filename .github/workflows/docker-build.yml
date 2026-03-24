@@ -32,4 +32,4 @@ jobs:
           target: ${{ github.ref_name == 'dev' && 'dev' || 'prod' }}
           tags: |
             ghcr.io/${{ github.repository_owner }}/onvif-server:${{ github.ref_name }}
-            ghcr.io/${{ github.repository_owner }}/onvif-server:latest
+            ${{ github.ref_name == 'main' && format('ghcr.io/{0}/onvif-server:latest', github.repository_owner) || '' }}

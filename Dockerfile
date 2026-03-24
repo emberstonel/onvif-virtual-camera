@@ -8,6 +8,12 @@ COPY package*.json ./
 RUN npm install --omit=dev
 COPY . .
 
+# Copy helper script + extraction wrapper into the image
+COPY resources/macvlan-init.sh /usr/local/bin/macvlan-init.sh
+COPY resources/copy-helper-script.sh /copy-helper-script.sh
+
+RUN chmod +x /copy-helper-script.sh
+
 # -------------------------
 # Stage 2: Development image
 # -------------------------
@@ -22,7 +28,6 @@ RUN apk add --no-cache \
     bind-tools \
     net-tools
 
-# Default shell for exec
 CMD ["node", "main.js"]
 
 # -------------------------

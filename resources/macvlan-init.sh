@@ -208,6 +208,9 @@ for i in "${!NAMES[@]}"; do
 
     echo "[INFO] Writing $NETDEV_FILE"
     cat > "$NETDEV_FILE" <<EOF
+[Match]
+Name=$PARENT_IFACE
+
 [NetDev]
 Name=$IFACE
 Kind=macvlan

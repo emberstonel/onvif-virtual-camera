@@ -28,11 +28,6 @@ cleanup() {
     echo "[INFO] Cleanup complete."
 }
 
-if $CLEANUP_ONLY; then
-    cleanup
-    exit 0
-fi
-
 echo "[INFO] Starting macvlan-init helper..."
 echo "[INFO] Validating configurations."
 
@@ -54,11 +49,11 @@ while [[ $# -gt 0 ]]; do
         *) echo "Unknown argument: $1"; usage ;;
     esac
 done
-
-echo "[INFO] Arguments received:"
-echo "       CONFIG_PATH = $CONFIG_PATH"
-echo "       PARENT_IFACE = $PARENT_IFACE"
-echo "       MODE = $MODE"
+if $CLEANUP_ONLY; then
+    cleanup
+    exit 0
+fi
+echo "[INFO] Processing config file `$CONFIG_PATH` using $PARENT_IFACE."
 
 # Argument validation
 [[ -z "$CONFIG_PATH" ]] && { echo "Error: --config <path> is required"; usage; }
@@ -94,7 +89,7 @@ if [[ "$MODE" == "static" ]]; then
         echo "Error: number of static IPs does not match number of cameras"
         exit 1
     fi
-    echo "[INFO] Static mode: ${#STATIC_IPS[@]} IPs provided."
+    echo "[INFO] Setup continuing in static mode: ${#STATIC_IPS[@]} IPs provided."
     echo "[INFO] Inferring network settings from parent interface $PARENT_IFACE..."
 
     PARENT_CIDR=$(ip -4 addr show "$PARENT_IFACE" | awk '/inet / {print $2}' | head -n1)

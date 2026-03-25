@@ -26,8 +26,9 @@ cleanup() {
 
     echo "[INFO] Removing vcam-* interfaces..."
     for IFACE in $(ip -o link show | awk -F': ' '/vcam-/ {print $2}'); do
+        NAME=$(cut -d '@' -f 1 <<< "$IFACE")
         echo "[INFO] Deleting interface $IFACE"
-        ip link delete "$IFACE" 2>/dev/null || true
+        ip link delete "$NAME" 2>/dev/null || true
     done
 
     echo "[INFO] Removing runtime script and service..."

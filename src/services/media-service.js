@@ -44,6 +44,7 @@ class MediaService {
 
     // ONVIF: GetStreamUri
     async GetStreamUri() {
+        logger.debug(`GetStreamUri called for ${this.camera.name} -> ${this.camera.rtspUrl}`);
         return {
             MediaUri: {
                 Uri: this.camera.rtspUrl,
@@ -56,6 +57,7 @@ class MediaService {
 
     // ONVIF: GetSnapshotUri
     async GetSnapshotUri() {
+        logger.debug(`GetSnapshotUri called for ${this.camera.name} -> ${this.camera.snapshotUrl}`);
         return {
             MediaUri: {
                 Uri: this.camera.snapshotUrl,

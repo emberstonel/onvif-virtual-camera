@@ -42,8 +42,16 @@ class OnvifServer {
                     `HTTP listener ready for ${this.camera.name} on ${this.camera.ip}:${this.camera.onvifPort}`
                 );
 
-                soap.listen(server, "/onvif/device_service", deviceServiceDef, wsdlDevice);
-                soap.listen(server, "/onvif/media_service", mediaServiceDef, wsdlMedia);
+                const deviceSoapServer = soap.listen(server, "/onvif/device_service", deviceServiceDef, wsdlDevice);
+                const mediaSoapServer = soap.listen(server, "/onvif/media_service", mediaServiceDef, wsdlMedia);
+
+                deviceSoapServer.on("request", (xml, methodName) => {
+                    logger.debug(`Device SOAP request received for ${this.camera.name}: ${methodName}`);
+                });
+
+                mediaSoapServer.on("request", (xml, methodName) => {
+                    logger.debug(`Media SOAP request received for ${this.camera.name}: ${methodName}`);
+                });
 
                 try {
                     await this.discoveryService.start();

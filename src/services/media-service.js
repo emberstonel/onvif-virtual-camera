@@ -24,13 +24,17 @@ class MediaService {
                         SourceToken: this.videoSourceToken
                     },
                     VideoEncoderConfiguration: {
-                        Encoding: "H264",
-                        Resolution: { Width: 1920, Height: 1080 },
-                        Quality: 5,
+                        $: { token: this.videoEncoderToken },
+                        Encoding: this.camera.stream.encoding,
+                        Resolution: {
+                            Width: this.camera.stream.width,
+                            Height: this.camera.stream.height
+                        },
+                        Quality: this.camera.stream.quality,
                         RateControl: {
-                            FrameRateLimit: 30,
+                            FrameRateLimit: this.camera.stream.framerate,
                             EncodingInterval: 1,
-                            BitrateLimit: 4096
+                            BitrateLimit: this.camera.stream.bitrate
                         }
                     }
                 }
@@ -68,8 +72,11 @@ class MediaService {
             VideoSources: [
                 {
                     $: { token: this.videoSourceToken },
-                    Framerate: 30,
-                    Resolution: { Width: 1920, Height: 1080 }
+                    Framerate: this.camera.stream.framerate,
+                    Resolution: {
+                        Width: this.camera.stream.width,
+                        Height: this.camera.stream.height
+                    }
                 }
             ]
         };
@@ -87,13 +94,37 @@ class MediaService {
         };
     }
 
+    // ONVIF: GetVideoEncoderConfiguration
+    async GetVideoEncoderConfiguration() {
+        return {
+            VideoEncoderConfiguration: {
+                $: { token: this.videoEncoderToken },
+                Name: "VideoEncoderConfig",
+                UseCount: 1,
+                Encoding: this.camera.stream.encoding,
+                Resolution: {
+                    Width: this.camera.stream.width,
+                    Height: this.camera.stream.height
+                },
+                Quality: this.camera.stream.quality,
+                RateControl: {
+                    FrameRateLimit: this.camera.stream.framerate,
+                    EncodingInterval: 1,
+                    BitrateLimit: this.camera.stream.bitrate
+                }
+            }
+        };
+    }
+
+    // ONVIF: GetServiceDefinition
     GetServiceDefinition() {
         return {
             GetProfiles: this.GetProfiles.bind(this),
             GetStreamUri: this.GetStreamUri.bind(this),
             GetSnapshotUri: this.GetSnapshotUri.bind(this),
             GetVideoSources: this.GetVideoSources.bind(this),
-            GetVideoSourceConfiguration: this.GetVideoSourceConfiguration.bind(this)
+            GetVideoSourceConfiguration: this.GetVideoSourceConfiguration.bind(this),
+            GetVideoEncoderConfiguration: this.GetVideoEncoderConfiguration.bind(this)
         };
     }
 

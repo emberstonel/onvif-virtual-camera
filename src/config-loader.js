@@ -70,11 +70,26 @@ function loadConfig(configPath) {
             ? cam.snapshot_path
             : `/${cam.snapshot_path}`;
 
-        // Construct full URLs
-        const rtspUrl = `rtsp://${source.auth.username}:${source.auth.password}` +
-                        `@${source.hostname}:${source.rtsp_port}${rtspPath}`;
+        // Construct full URLs with optional authentication
+        const hasAuth =
+            source.auth &&
+            source.auth.username &&
+            source.auth.password;
 
-        const snapshotUrl = `http://${source.hostname}:${source.http_port}${snapshotPath}`;
+        const authPrefix = hasAuth
+            ? `${encodeURIComponent(source.auth.username)}:${encodeURIComponent(source.auth.password)}@`
+            : "";
+
+        // RTSP URL
+        const rtspUrl =
+            `rtsp://${authPrefix}${source.hostname}:${source.rtsp_port}${rtspPath}`;
+
+        // Snapshot URL
+        const snapshotUrl =
+            `http://${authPrefix}${source.hostname}:${source.http_port}${snapshotPath}`;
+
+        // Fetch stream config
+        const stream = fetchStreamDetails(source, cam);
 
         return {
             name: cam.name,
@@ -82,6 +97,7 @@ function loadConfig(configPath) {
             mac,
             rtspUrl,
             snapshotUrl,
+            stream,
             host: {
                 hostname: source.hostname,
                 rtsp_port: source.rtsp_port,
@@ -91,6 +107,19 @@ function loadConfig(configPath) {
     });
 
     return { cameras };
+}
+
+function fetchStreamDetails(source, cam) {
+    // Placeholder for future probing of upstream camera / RTSP stream
+    // For now, return static defaults.
+    return {
+        encoding: "H264",
+        width: 1920,
+        height: 1080,
+        framerate: 30,
+        bitrate: 4096,
+        quality: 5
+    };
 }
 
 function validateHostSource(src) {

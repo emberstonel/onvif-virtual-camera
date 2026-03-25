@@ -17,17 +17,16 @@ class DiscoveryService {
     }
 
     buildEndpointAddress() {
-        // If MAC is present, use it to build a stable UUID-like value
-        if (this.camera.mac) {
-            const macClean = this.camera.mac.toLowerCase().replace(/[^0-9a-f]/g, "");
-            // urn:uuid:cam-<mac>-<ip-last-octet>
-            const lastOctet = this.camera.ip.split(".").pop();
-            return `urn:uuid:cam-${macClean}-${lastOctet}`;
-        }
-
-        // Fallback: IP-based
-        const ipSafe = this.camera.ip.replace(/\./g, "-");
-        return `urn:uuid:cam-${ipSafe}`;
+        const macClean = this.camera.mac.toLowerCase().replace(/[^0-9a-f]/g, "");
+        const padded = (macClean + "00000000000000000000000000000000").slice(0, 32);
+        const uuid = [
+            padded.slice(0, 8),
+            padded.slice(8, 12),
+            padded.slice(12, 16),
+            padded.slice(16, 20),
+            padded.slice(20, 32)
+        ].join("-");
+        return `urn:uuid:${uuid}`;
     }
 
     buildXAddr() {
@@ -106,13 +105,15 @@ class DiscoveryService {
         }
 
         logger.debug(
-            `WS-Discovery Probe received for ${this.camera.name} from ${rinfo.address}:${rinfo.port}`
+            `WS-Discovery Probe received for ${this.camera.name} from ${rinfo.address}:${rinfo.port} ` +
+            `(endpoint=${this.endpointAddress}, xaddr=${this.xaddr}, mac=${this.camera.mac}, ip=${this.camera.ip})`
         );
 
         // Optional: filter by Types/Scopes if needed
         // For now, respond to all Probes
 
-        const responseXml = this.buildProbeMatchesResponse();
+        const relatesTo = this.extractMessageId(xml);
+        const responseXml = this.buildProbeMatchesResponse(relatesTo);
 
         const buf = Buffer.from(responseXml, "utf8");
         this.socket.send(buf, 0, buf.length, rinfo.port, rinfo.address, (err) => {
@@ -122,18 +123,15 @@ class DiscoveryService {
                 );
             } else {
                 logger.debug(
-                    `ProbeMatches sent for ${this.camera.name} to ${rinfo.address}:${rinfo.port}`
+                    `ProbeMatches sent for ${this.camera.name} to ${rinfo.address}:${rinfo.port} ` +
+                    `(endpoint=${this.endpointAddress}, xaddr=${this.xaddr}, mac=${this.camera.mac}, ip=${this.camera.ip})`
                 );
             }
         });
     }
 
-    buildProbeMatchesResponse() {
-        // Minimal WS-Discovery ProbeMatches response
-        // Protect mainly cares about XAddrs and EndpointReference
-        const now = new Date().toISOString();
-
-        return `
+buildProbeMatchesResponse(relatesTo) {
+    return `
 <SOAP-ENV:Envelope
     xmlns:SOAP-ENV="http://www.w3.org/2003/05/soap-envelope"
     xmlns:wsa="http://schemas.xmlsoap.org/ws/2004/08/addressing"
@@ -141,9 +139,14 @@ class DiscoveryService {
     xmlns:dn="http://www.onvif.org/ver10/network/wsdl">
   <SOAP-ENV:Header>
     <wsa:MessageID>urn:uuid:${this.generateSimpleId()}</wsa:MessageID>
-    <wsa:To>urn:schemas-xmlsoap-org:ws:2005:04:discovery</wsa:To>
-    <wsa:Action>http://schemas.xmlsoap.org/ws/2005/04/discovery/ProbeMatches</wsa:Action>
-    <wsa:AppSequence InstanceId="1" MessageNumber="1" />
+    ${relatesTo ? `<wsa:RelatesTo>${relatesTo}</wsa:RelatesTo>` : ""}
+    <wsa:To SOAP-ENV:mustUnderstand="true">
+      http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous
+    </wsa:To>
+    <wsa:Action SOAP-ENV:mustUnderstand="true">
+      http://schemas.xmlsoap.org/ws/2005/04/discovery/ProbeMatches
+    </wsa:Action>
+    <wsd:AppSequence SOAP-ENV:mustUnderstand="true" InstanceId="1" MessageNumber="1" />
   </SOAP-ENV:Header>
   <SOAP-ENV:Body>
     <wsd:ProbeMatches>
@@ -155,7 +158,9 @@ class DiscoveryService {
         <wsd:Scopes>
           onvif://www.onvif.org/type/video_encoder
           onvif://www.onvif.org/name/${this.escapeScope(this.camera.name)}
-          onvif://www.onvif.org/location/${this.escapeScope((this.camera.host && this.camera.host.hostname) || "virtual")}
+          onvif://www.onvif.org/location/${this.escapeScope(
+              (this.camera.host && this.camera.host.hostname) || "virtual"
+          )}
         </wsd:Scopes>
         <wsd:XAddrs>${this.xaddr}</wsd:XAddrs>
         <wsd:MetadataVersion>1</wsd:MetadataVersion>
@@ -176,6 +181,11 @@ class DiscoveryService {
         if (!value) return "";
         // Replace spaces and unsafe chars with underscores
         return String(value).replace(/[^A-Za-z0-9_\-]/g, "_");
+    }
+
+    extractMessageId(xml) {
+        const match = xml.match(/<[^:>]*:?MessageID[^>]*>([^<]+)<\/[^:>]*:?MessageID>/i);
+        return match ? match[1].trim() : null;
     }
 }
 

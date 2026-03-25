@@ -158,9 +158,8 @@ buildProbeMatchesResponse(relatesTo) {
         <wsd:Scopes>
           onvif://www.onvif.org/type/video_encoder
           onvif://www.onvif.org/name/${this.escapeScope(this.camera.name)}
-          onvif://www.onvif.org/location/${this.escapeScope(
-              (this.camera.host && this.camera.host.hostname) || "virtual"
-          )}
+          onvif://www.onvif.org/hardware/${this.escapeScope(this.camera.model)}
+          onvif://www.onvif.org/location/${this.escapeScope((this.camera.host && this.camera.host.hostname) || "virtual")}
         </wsd:Scopes>
         <wsd:XAddrs>${this.xaddr}</wsd:XAddrs>
         <wsd:MetadataVersion>1</wsd:MetadataVersion>

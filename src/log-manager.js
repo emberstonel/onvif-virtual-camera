@@ -9,6 +9,10 @@ function format(level, msg) {
 }
 
 module.exports = {
+    debug(msg, ...args) {
+        console.debug(format("DEBUG", util.format(msg, ...args)));
+    },
+
     info(msg, ...args) {
         console.log(format("INFO", util.format(msg, ...args)));
     },

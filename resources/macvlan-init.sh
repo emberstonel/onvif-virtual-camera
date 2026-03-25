@@ -6,6 +6,7 @@ PARENT_IFACE=""
 MODE=""
 STATIC_IPS=()
 CLEANUP_ONLY=false
+DHCP_FAIL=false
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 RUNTIME_SCRIPT="$SCRIPT_DIR/macvlan-runtime.sh"
@@ -116,6 +117,9 @@ else
     echo "[INFO] Setup continuing in DHCP mode."
 fi
 
+# Enable promiscuous mode on the parent interface
+ip link set "$PARENT_IFACE" promisc on
+
 # Create runtime script used by the service
 echo "[INFO] Generating runtime script: $RUNTIME_SCRIPT"
 
@@ -140,18 +144,27 @@ echo "[INFO] Generating runtime script: $RUNTIME_SCRIPT"
         if [[ "$MODE" == "static" ]]; then
             IP="${STATIC_IPS[$i]}"
             echo "ip addr add \"$IP/${PARENT_CIDR#*/}\" dev \"$IFACE\" || true"
+        else
+            echo "sleep 1.5"
+            if command -v dhcpcd >/dev/null 2>&1; then
+                echo "dhcpcd -I \"$IFACE\""
+            elif command -v dhclient >/dev/null 2>&1; then
+                echo "dhclient \"$IFACE\""
+            elif command -v udhcpc >/dev/null 2>&1; then
+                echo "udhcpc -i \"$IFACE\" -n"
+            else
+                DHCP_FAIL=true
+            fi
         fi
 
         echo ""
     done
 
-    if [[ "$MODE" == "dhcp" ]]; then
-        echo "# DHCP mode: rely on system DHCP client"
-        echo "# If needed, uncomment:"
-        echo "# dhclient vcam-*"
-    fi
-
 } > "$RUNTIME_SCRIPT"
+
+if $DHCP_FAIL; then
+    echo "[WARN] DHCP mode enabled but a DHCP client could not be found. Try installing 'dhcpcd' first (eg 'apt install dhcpcd')."
+fi
 
 chmod +x "$RUNTIME_SCRIPT"
 echo "[INFO] Runtime script created and marked executable."

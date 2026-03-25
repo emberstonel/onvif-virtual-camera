@@ -59,9 +59,10 @@ class DiscoveryService {
                 }
             });
 
-            this.socket.bind(DISCOVERY_PORT, this.camera.ip, () => {
+            this.socket.bind(DISCOVERY_PORT, "0.0.0.0", () => {
                 try {
                     this.socket.addMembership(MULTICAST_ADDRESS, this.camera.ip);
+                    this.socket.setMulticastInterface(this.camera.ip);
                 } catch (err) {
                     logger.error(
                         `Failed to join multicast group on ${this.camera.ip} for ${this.camera.name}: ${err.message}`

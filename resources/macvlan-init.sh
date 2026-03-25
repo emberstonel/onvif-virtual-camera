@@ -147,11 +147,11 @@ echo "[INFO] Generating runtime script: $RUNTIME_SCRIPT"
         else
             echo "sleep 1.5"
             if command -v dhcpcd >/dev/null 2>&1; then
-                echo "dhcpcd -I \"$IFACE\""
+                echo "dhcpcd -4 -I -G -C --config /dev/null \"$IFACE\""
             elif command -v dhclient >/dev/null 2>&1; then
-                echo "dhclient \"$IFACE\""
+                echo "dhclient -4 -v -cf /dev/null \"$IFACE\""
             elif command -v udhcpc >/dev/null 2>&1; then
-                echo "udhcpc -i \"$IFACE\" -n"
+                echo "udhcpc -i \"$IFACE\" -n -q"
             else
                 DHCP_FAIL=true
             fi

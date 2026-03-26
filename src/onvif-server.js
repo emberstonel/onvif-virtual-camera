@@ -60,7 +60,7 @@ class OnvifServer {
             const server = http.createServer((req, res) => {
                 logger.debug(`HTTP request for ${this.camera.name}: ${req.method} ${req.url} from ${req.socket.remoteAddress}`);
 
-                if (req.url.startsWith("/onvif/device_service") || req.url.startsWith("/onvif/media_service") {
+                if (req.url.startsWith("/onvif/device_service") || req.url.startsWith("/onvif/media_service")) {
                     return;
                 }
 

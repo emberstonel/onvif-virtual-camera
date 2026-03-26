@@ -58,14 +58,20 @@ class OnvifServer {
     async start() {
         return new Promise((resolve, reject) => {
             const server = http.createServer((req, res) => {
-                logger.debug(`HTTP request for ${this.camera.name}: ${req.method} ${req.url} from ${req.socket.remoteAddress}`);
-
-                if (req.url.startsWith("/onvif/device_service") || req.url.startsWith("/onvif/media_service")) {
+                if (req.url && (req.url.startsWith("/onvif/device_service") || req.url.startsWith("/onvif/media_service"))) {
                     return;
                 }
 
                 res.statusCode = 404;
                 res.end("Not Found");
+            });
+
+            server.on("clientError", (err, socket) => {
+                logger.error(`HTTP clientError for ${this.camera.name}: ${err.message}`);
+            });
+            server.prependListener("request", (req, res) => {
+                logger.debug(`HTTP request for ${this.camera.name}: ${req.method} ${req.url} from ${req.socket.remoteAddress}`
+                );
             });
 
             const wsdlDevice = path.join(__dirname, "wsdl", "device_service.wsdl");
@@ -93,11 +99,16 @@ class OnvifServer {
                 mediaSoapServer.authenticate = (security) => this.authenticateRequest(security);
 
                 deviceSoapServer.on("request", (xml, methodName) => {
-                    logger.debug(`Device SOAP request received for ${this.camera.name}: ${methodName}`);
+                    logger.debug(`SOAP Device request received for ${this.camera.name}: ${methodName}`);
                 });
-
+                deviceSoapServer.on("error", (err) => {
+                    logger.error(`SOAP Device error for ${this.camera.name}: ${err.message}`);
+                });
                 mediaSoapServer.on("request", (xml, methodName) => {
-                    logger.debug(`Media SOAP request received for ${this.camera.name}: ${methodName}`);
+                    logger.debug(`SOAP Media request received for ${this.camera.name}: ${methodName}`);
+                });
+                mediaSoapServer.on("error", (err) => {
+                    logger.error(`SOAP Media error for ${this.camera.name}: ${err.message}`);
                 });
 
                 try {

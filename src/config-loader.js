@@ -2,6 +2,14 @@ const fs = require("fs");
 const yaml = require("js-yaml");
 const logger = require("./log-manager");
 
+function hasAuth(object) {
+    return !!(
+        object.auth &&
+        object.auth.username &&
+        object.auth.password
+    );
+}
+
 function loadConfig(configPath) {
     if (!fs.existsSync(configPath)) {
         throw new Error(`Config file not found at ${configPath}`);
@@ -40,10 +48,10 @@ function loadConfig(configPath) {
             hostname: src.hostname,
             rtsp_port: src.rtsp_port,
             http_port: src.http_port,
-            auth: {
+            auth: hasAuth(src) ? {
                 username: src.auth.username,
                 password: src.auth.password
-            }
+            } : null
         };
     }
 
@@ -71,12 +79,7 @@ function loadConfig(configPath) {
             : `/${cam.snapshot_path}`;
 
         // Construct full URLs with optional authentication
-        const hasAuth =
-            source.auth &&
-            source.auth.username &&
-            source.auth.password;
-
-        const authPrefix = hasAuth
+        const authPrefix = hasAuth(source)
             ? `${encodeURIComponent(source.auth.username)}:${encodeURIComponent(source.auth.password)}@`
             : "";
 
@@ -98,6 +101,10 @@ function loadConfig(configPath) {
             rtspUrl,
             snapshotUrl,
             stream,
+            auth: hasAuth(source) ? {
+                username: source.auth.username,
+                password: source.auth.password
+            } : null,
             host: {
                 hostname: source.hostname,
                 rtsp_port: source.rtsp_port,
@@ -123,15 +130,22 @@ function fetchStreamDetails(source, cam) {
 }
 
 function validateHostSource(src) {
-    const required = ["name", "hostname", "rtsp_port", "http_port", "auth"];
+    const required = ["name", "hostname", "rtsp_port", "http_port"];
     for (const key of required) {
         if (!src[key]) {
             throw new Error(`host_source missing required field '${key}'.`);
         }
     }
 
-    if (!src.auth.username || !src.auth.password) {
-        throw new Error("host_source.auth must contain username and password.");
+    if (src.auth) {
+        const hasUsername = !!src.auth.username;
+        const hasPassword = !!src.auth.password;
+
+        if (hasUsername !== hasPassword) {
+            throw new Error(
+                "host_source.auth must contain both username and password if either is specified."
+            );
+        }
     }
 }
 

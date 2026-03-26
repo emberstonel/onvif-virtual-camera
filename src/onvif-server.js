@@ -2,7 +2,6 @@
 const http = require("http");
 const soap = require("soap");
 const path = require("path");
-const fs = require("fs");
 const logger = require("./log-manager");
 const DeviceService = require("./services/device-service");
 const MediaService = require("./services/media-service");
@@ -11,12 +10,7 @@ const DiscoveryService = require("./services/discovery-service");
 class OnvifServer {
     constructor(camera) {
         this.camera = camera;
-
-        this.hasAuth = !!(
-            this.camera.auth &&
-            this.camera.auth.username &&
-            this.camera.auth.password
-        );
+        this.hasAuth = !!(this.camera.auth && this.camera.auth.username && this.camera.auth.password);
 
         this.deviceService = new DeviceService(camera);
         this.mediaService = new MediaService(camera);
@@ -25,38 +19,38 @@ class OnvifServer {
 
     authenticateRequest(security) {
         if (!this.hasAuth) {
-            console.error(`[AUTH] disabled for ${this.camera.name}`);
+            logger.debug(`SOAP auth disabled for ${this.camera.name}`);
             return true;
         }
-
         if (!security) {
-            console.error(`[AUTH] missing security object for ${this.camera.name}`);
+            logger.warn(`SOAP auth missing security object for ${this.camera.name}`);
             return false;
         }
 
-        console.error(`[AUTH] security keys ${this.camera.name}: ${Object.keys(security).join(", ")}`);
+        logger.debug(`SOAP auth security keys for ${this.camera.name}: ${Object.keys(security).join(", ")}`);
 
-        const token = security.UsernameToken;
+        const token = security && security.UsernameToken;
         if (!token) {
-            console.error(`[AUTH] missing UsernameToken for ${this.camera.name}`);
+            logger.warn(`SOAP auth missing UsernameToken for ${this.camera.name}`);
             return false;
         }
 
-        console.error(`[AUTH] UsernameToken keys ${this.camera.name}: ${Object.keys(token).join(", ")}`);
-
-        console.error(
-            `[AUTH] attempt ${this.camera.name} username=${token.Username} ` +
-            `hasPassword=${token.Password !== undefined} ` +
-            `passwordType=${typeof token.Password} ` +
-            `hasNonce=${token.Nonce !== undefined} ` +
+        logger.debug(`SOAP UsernameToken keys for ${this.camera.name}: ${Object.keys(token).join(", ")}`);
+        logger.debug(
+            `SOAP auth attempt for ${this.camera.name}: ` +
+            `username=${token.Username || "<missing>"}, ` +
+            `hasPassword=${token.Password !== undefined}, ` +
+            `passwordType=${typeof token.Password}, ` +
+            `hasNonce=${token.Nonce !== undefined}, ` +
             `hasCreated=${token.Created !== undefined}`
         );
+        if (token.Password && typeof token.Password === "object") {
+            logger.debug(`SOAP Password object keys for ${this.camera.name}: ${Object.keys(token.Password).join(", ")}`);
+        }
 
-        const accepted =
-            token.Username === this.camera.auth.username &&
-            token.Password === this.camera.auth.password;
+        const accepted = (token.Username === this.camera.auth.username && token.Password === this.camera.auth.password);
 
-        console.error(`[AUTH] accepted=${accepted} camera=${this.camera.name}`);
+        logger.debug(`SOAP auth attempt for ${this.camera.name}: username=${token.Username}, accepted=${accepted}`);
 
         return accepted;
     }
@@ -64,15 +58,7 @@ class OnvifServer {
     async start() {
         return new Promise((resolve, reject) => {
             const server = http.createServer((req, res) => {
-                console.error(`[HTTP] ${this.camera.name} ${req.method} ${req.url} from ${req.socket.remoteAddress}`);
-
-                if (
-                    req.url &&
-                    (
-                        req.url.startsWith("/onvif/device_service") ||
-                        req.url.startsWith("/onvif/media_service")
-                    )
-                ) {
+                if (req.url && (req.url.startsWith("/onvif/device_service") || req.url.startsWith("/onvif/media_service"))) {
                     return;
                 }
 
@@ -80,19 +66,17 @@ class OnvifServer {
                 res.end("Not Found");
             });
 
-            server.on("clientError", (err) => {
-                console.error(`[HTTP-CLIENT-ERROR] ${this.camera.name} ${err.message}`);
+            server.on("clientError", (err, socket) => {
+                logger.error(`HTTP clientError for ${this.camera.name}: ${err.message}`);
+            });
+            server.prependListener("request", (req, res) => {
+                logger.debug(`HTTP request for ${this.camera.name}: ${req.method} ${req.url} from ${req.socket.remoteAddress}`
+                );
             });
 
-            const deviceWsdlXml = fs.readFileSync(
-                path.join(__dirname, "wsdl", "device_service.wsdl"),
-                "utf8"
-            );
-
-            const mediaWsdlXml = fs.readFileSync(
-                path.join(__dirname, "wsdl", "media_service.wsdl"),
-                "utf8"
-            );
+            const wsdlFolder = path.resolve(__dirname, 'wsdl');
+            const deviceWsdlPath = path.join(wsdlFolder, 'device_service.wsdl');
+            const mediaWsdlPath = path.join(wsdlFolder, 'media_service.wsdl');
 
             const deviceServiceDef = {
                 DeviceService: {
@@ -112,57 +96,44 @@ class OnvifServer {
                 const deviceSoapServer = soap.listen(server, {
                     path: "/onvif/device_service",
                     services: deviceServiceDef,
-                    xml: deviceWsdlXml,
-                    forceSoap12Headers: true
+                    xml: deviceWsdlPath,
+                    forceSoap12Headers: true,
+                    wsdl_path: wsdlFolder,
+                    wsdl_options: {
+                        attributesKey: '$attributes'
+                    }
                 });
-
                 const mediaSoapServer = soap.listen(server, {
                     path: "/onvif/media_service",
                     services: mediaServiceDef,
-                    xml: mediaWsdlXml,
-                    forceSoap12Headers: true
+                    xml: mediaWsdlPath,
+                    forceSoap12Headers: true,
+                    wsdl_path: wsdlFolder,
+                    wsdl_options: {
+                        attributesKey: '$attributes'
+                    }
                 });
 
-                deviceSoapServer.authenticate = (security) =>
-                    this.authenticateRequest(security);
-
-                mediaSoapServer.authenticate = (security) =>
-                    this.authenticateRequest(security);
-
-                deviceSoapServer.log = (type, data) => {
-                    console.error(`[SOAP-DEVICE-LOG] ${this.camera.name} ${type}: ${data}`);
-                };
-
-                mediaSoapServer.log = (type, data) => {
-                    console.error(`[SOAP-MEDIA-LOG] ${this.camera.name} ${type}: ${data}`);
-                };
+                deviceSoapServer.authenticate = (security) => this.authenticateRequest(security);
+                mediaSoapServer.authenticate = (security) => this.authenticateRequest(security);
 
                 deviceSoapServer.on("request", (xml, methodName) => {
-                    console.error(`[SOAP-DEVICE] ${this.camera.name} ${methodName}`);
+                    logger.debug(`SOAP Device request received for ${this.camera.name}: ${methodName}`);
                 });
-
                 deviceSoapServer.on("error", (err) => {
-                    console.error(
-                        `[SOAP-DEVICE-ERR] ${this.camera.name} ${err && err.message}`
-                    );
+                    logger.error(`SOAP Device error for ${this.camera.name}: ${err.message}`);
                 });
-
                 mediaSoapServer.on("request", (xml, methodName) => {
-                    console.error(`[SOAP-MEDIA] ${this.camera.name} ${methodName}`);
+                    logger.debug(`SOAP Media request received for ${this.camera.name}: ${methodName}`);
                 });
-
                 mediaSoapServer.on("error", (err) => {
-                    console.error(
-                        `[SOAP-MEDIA-ERR] ${this.camera.name} ${err && err.message}`
-                    );
+                    logger.error(`SOAP Media error for ${this.camera.name}: ${err.message}`);
                 });
 
                 try {
                     await this.discoveryService.start();
                 } catch (err) {
-                    logger.error(
-                        `Failed to start WS-Discovery for ${this.camera.name}: ${err.message}`
-                    );
+                    logger.error(`Failed to start WS-Discovery for ${this.camera.name}: ${err.message}`);
                 }
 
                 resolve();

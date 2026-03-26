@@ -58,7 +58,14 @@ class OnvifServer {
     async start() {
         return new Promise((resolve, reject) => {
             const server = http.createServer((req, res) => {
-                res.end("ONVIF service endpoint");
+                logger.debug(`HTTP request for ${this.camera.name}: ${req.method} ${req.url} from ${req.socket.remoteAddress}`);
+
+                if (req.url.startsWith("/onvif/device_service") || req.url.startsWith("/onvif/media_service") {
+                    return;
+                }
+
+                res.statusCode = 404;
+                res.end("Not Found");
             });
 
             const wsdlDevice = path.join(__dirname, "wsdl", "device_service.wsdl");

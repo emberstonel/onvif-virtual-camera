@@ -44,7 +44,6 @@ class OnvifServer {
             logger.debug(`SOAP auth disabled for ${this.camera.name}`);
             return true;
         }
-
         if (!security) {
             logger.warn(`SOAP auth missing security object for ${this.camera.name}`);
             return false;
@@ -53,7 +52,6 @@ class OnvifServer {
         logger.debug(`SOAP auth security keys for ${this.camera.name}: ${Object.keys(security).join(", ")}`);
 
         const token = security.UsernameToken;
-logger.warn(`SOAP UsernameToken raw for ${this.camera.name}: ` + JSON.stringify(token, null, 2));
         if (!token) {
             logger.warn(`SOAP auth missing UsernameToken for ${this.camera.name}`);
             return false;
@@ -62,27 +60,33 @@ logger.warn(`SOAP UsernameToken raw for ${this.camera.name}: ` + JSON.stringify(
         logger.debug(`SOAP UsernameToken keys for ${this.camera.name}: ${Object.keys(token).join(", ")}`);
 
         const username = token.Username;
-        const passwordValue = token.Password;
-        const passwordType = typeof passwordValue;
-        const nonce = token.Nonce ?? passwordValue?.Nonce;
-logger.warn(`SOAP nonce raw for ${this.camera.name}: ` + JSON.stringify(token.Nonce ?? token.Password?.Nonce, null, 2));        
-        const created = token.Created ?? passwordValue?.Created;
-logger.warn(`SOAP created raw for ${this.camera.name}: ` + JSON.stringify(token.Created ?? token.Password?.Created, null, 2));        
-        const passwordText = typeof passwordValue === "string"
-            ? passwordValue
-            : passwordValue?.$value ?? passwordValue?._ ?? passwordValue?.value;
+        const passwordRaw = token.Password;
+        const nonceRaw = token.Nonce;
+        const createdRaw = token.Created;
+
+        const passwordValue = typeof passwordRaw === "string"
+            ? passwordRaw
+            : passwordRaw?.$value ?? passwordRaw?._ ?? passwordRaw?.value;
+
+        const nonceValue = typeof nonceRaw === "string"
+            ? nonceRaw
+            : nonceRaw?.$value ?? nonceRaw?._ ?? nonceRaw?.value;
+
+        const createdValue = typeof createdRaw === "string"
+            ? createdRaw
+            : createdRaw?.$value ?? createdRaw?._ ?? createdRaw?.value;
 
         logger.debug(
             `SOAP auth attempt for ${this.camera.name}: ` +
             `username=${username || "<missing>"}, ` +
-            `hasPassword=${passwordValue !== undefined}, ` +
-            `passwordType=${passwordType}, ` +
-            `hasNonce=${nonce !== undefined}, ` +
-            `hasCreated=${created !== undefined}`
+            `hasPassword=${passwordRaw !== undefined}, ` +
+            `passwordType=${typeof passwordRaw}, ` +
+            `hasNonce=${nonceRaw !== undefined}, ` +
+            `hasCreated=${createdRaw !== undefined}`
         );
 
-        if (passwordValue && typeof passwordValue === "object") {
-            logger.debug(`SOAP Password object keys for ${this.camera.name}: ${Object.keys(passwordValue).join(", ")}`);
+        if (passwordRaw && typeof passwordRaw === "object") {
+            logger.debug(`SOAP Password object keys for ${this.camera.name}: ${Object.keys(passwordRaw).join(", ")}`);
         }
 
         if (username !== this.camera.auth.username) {
@@ -90,25 +94,24 @@ logger.warn(`SOAP created raw for ${this.camera.name}: ` + JSON.stringify(token.
             return false;
         }
 
-        if (typeof passwordValue === "string") {
-            const accepted = passwordValue === this.camera.auth.password;
+        if (typeof passwordRaw === "string") {
+            const accepted = passwordRaw === this.camera.auth.password;
             logger.debug(`SOAP auth attempt for ${this.camera.name}: username=${username}, accepted=${accepted}, mode=PasswordText`);
             return accepted;
         }
 
-        if (passwordValue && typeof passwordValue === "object") {
+        if (passwordRaw && typeof passwordRaw === "object") {
             const crypto = require("crypto");
-            const passwordTypeUri = passwordValue.Type || passwordValue.type || "";
-            const digestValue = passwordText;
+            const passwordTypeUri = passwordRaw?.$attributes?.Type || passwordRaw?.Type || passwordRaw?.type || "";
 
-            if (!digestValue || !nonce || !created) {
+            if (!passwordValue || !nonceValue || !createdValue) {
                 logger.warn(`SOAP auth digest missing required fields for ${this.camera.name}`);
                 return false;
             }
 
             let nonceBuffer;
             try {
-                nonceBuffer = Buffer.from(nonce, "base64");
+                nonceBuffer = Buffer.from(nonceValue, "base64");
             } catch (err) {
                 logger.warn(`SOAP auth digest nonce decode failed for ${this.camera.name}: ${err.message}`);
                 return false;
@@ -118,12 +121,12 @@ logger.warn(`SOAP created raw for ${this.camera.name}: ` + JSON.stringify(token.
                 .createHash("sha1")
                 .update(Buffer.concat([
                     nonceBuffer,
-                    Buffer.from(created, "utf8"),
+                    Buffer.from(createdValue, "utf8"),
                     Buffer.from(this.camera.auth.password, "utf8")
                 ]))
                 .digest("base64");
 
-            const accepted = digestValue === expectedDigest;
+            const accepted = passwordValue === expectedDigest;
 
             logger.debug(
                 `SOAP auth attempt for ${this.camera.name}: ` +

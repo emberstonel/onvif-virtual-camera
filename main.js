@@ -7,8 +7,8 @@ const OnvifServer = require("./src/onvif-server");
 async function start() {
     logger.info("Starting ONVIF Virtual Camera Proxy...");
 
-    // Load config.yaml from the mounted root path
-    const configPath = path.join("/", "config.yml");
+    // Load config.yaml from local path (for debug) or the mounted root path
+    const configPath = fs.existsSync(path.resolve("./config.yml")) ? path.resolve("./config.yml") : "/config.yml";
 
     let config;
     try {

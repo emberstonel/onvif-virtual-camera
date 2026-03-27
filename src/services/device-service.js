@@ -5,6 +5,49 @@ class DeviceService {
         this.camera = camera;
     }
 
+    buildDeviceCapabilities() {
+        return {
+            XAddr: `http://${this.camera.ip}/onvif/device_service`,
+            System: {
+                SupportedVersions: {
+                    Major: 2,
+                    Minor: 5
+                },
+            },
+            Security: {
+                TLS11: false,
+                TLS12: false,
+                OnboardKeyGeneration: false,
+                AccessPolicyConfig: false,
+                X509Token: false,
+                SAMLToken: false,
+                KerberosToken: false,
+                RELToken: false,
+                Extension: {
+                    TLS10: false,
+                    Dot1X: false,
+                    RemoteUserHandling: false
+                }
+            }
+        };
+    }
+
+    buildMediaCapabilities() {
+        return {
+            XAddr: `http://${this.camera.ip}/onvif/media_service`,
+            StreamingCapabilities: {
+                RTPMulticast: false,
+                RTP_TCP: true,
+                RTP_RTSP_TCP: true
+            },
+            Extension: {
+                ProfileCapabilities: {
+                    MaximumNumberOfProfiles: 1
+                }
+            }
+        };
+    }
+
     // ONVIF: GetDeviceInformation
     async GetDeviceInformation() {
         return {
@@ -24,7 +67,9 @@ class DeviceService {
             SystemDateAndTime: {
                 DateTimeType: "NTP",
                 DaylightSavings: false,
-                TimeZone: { TZ: "UTC" },
+                TimeZone: {
+                    TZ: "UTC"
+                },
                 UTCDateTime: {
                     Time: {
                         Hour: now.getUTCHours(),
@@ -36,40 +81,88 @@ class DeviceService {
                         Month: now.getUTCMonth() + 1,
                         Day: now.getUTCDate()
                     }
+                },
+                LocalDateTime: {
+                    Time: {
+                        Hour: now.getHours(),
+                        Minute: now.getMinutes(),
+                        Second: now.getSeconds()
+                    },
+                    Date: {
+                        Year: now.getFullYear(),
+                        Month: now.getMonth() + 1,
+                        Day: now.getDate()
+                    }
                 }
             }
         };
     }
 
     // ONVIF: GetCapabilities
-    async GetCapabilities() {
+    async GetCapabilities(args) {
+        const category = args && args.Category;
+        const requested = Array.isArray(category)
+            ? category
+            : category
+                ? [category]
+                : [];
+
+        const allRequested = requested.length === 0 || requested.includes("All");
+        const includeDevice = allRequested || requested.includes("Device");
+        const includeMedia = allRequested || requested.includes("Media");
+
+        const capabilities = {};
+
+        if (includeDevice) {
+            capabilities.Device = this.buildDeviceCapabilities();
+        }
+
+        if (includeMedia) {
+            capabilities.Media = this.buildMediaCapabilities();
+        }
+
+        logger.debug(
+            `GetCapabilities called for ${this.camera.name} ` +
+            `(Category=${JSON.stringify(category)})`
+        );
+
         return {
-            Capabilities: {
-                Device: {
-                    XAddr: `http://${this.camera.ip}/onvif/device_service`
-                },
-                Media: {
-                    XAddr: `http://${this.camera.ip}/onvif/media_service`
-                }
-            }
+            Capabilities: capabilities
         };
     }
 
     // ONVIF: GetServices
-    async GetServices() {
-        return {
-            Service: [
-                {
-                    Namespace: "http://www.onvif.org/ver10/device/wsdl",
-                    XAddr: `http://${this.camera.ip}/onvif/device_service`,
-                    Version: { Major: 1, Minor: 0 }
-                },
-                {
-                    Namespace: "http://www.onvif.org/ver10/media/wsdl",
-                    XAddr: `http://${this.camera.ip}/onvif/media_service`,
-                    Version: { Major: 1, Minor: 0 }
+    async GetServices(args) {
+        const includeCapability = !!(args && args.IncludeCapability);
+
+        const services = [
+            {
+                Namespace: "http://www.onvif.org/ver10/device/wsdl",
+                XAddr: `http://${this.camera.ip}/onvif/device_service`,
+                Version: {
+                    Major: 2,
+                    Minor: 5
                 }
-            ]
+            },
+            {
+                Namespace: "http://www.onvif.org/ver10/media/wsdl",
+                XAddr: `http://${this.camera.ip}/onvif/media_service`,
+                Version: {
+                    Major: 2,
+                    Minor: 5
+                }
+            }
+        ];
+
+        if (includeCapability) {
+            services[0].Capabilities = this.buildDeviceCapabilities();
+            services[1].Capabilities = this.buildMediaCapabilities();
+        }
+
+        logger.debug(`GetServices called for ${this.camera.name} ` + `(IncludeCapability=${includeCapability})`);
+
+        return {
+            Service: services
         };
     }
 
@@ -81,7 +174,6 @@ class DeviceService {
             GetServices: this.GetServices.bind(this)
         };
     }
-
 }
 
 module.exports = DeviceService;

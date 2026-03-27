@@ -7,100 +7,29 @@ class MediaService {
         // Protect expects exactly one profile with predictable tokens
         this.profileToken = "profile_1";
         this.videoSourceToken = "video_source_1";
+        this.videoSourceConfigToken = "video_source_config_1";
         this.videoEncoderToken = "video_encoder_1";
     }
 
-    // ONVIF: GetProfiles
-    async GetProfiles() {
+    buildProfile() {
         return {
-            Profiles: [
-                {
-                    $: {
-                        token: this.profileToken,
-                        fixed: "true"
-                    },
-                    Name: "VirtualProfile",
-                    VideoSourceConfiguration: {
-                        SourceToken: this.videoSourceToken
-                    },
-                    VideoEncoderConfiguration: {
-                        $: { token: this.videoEncoderToken },
-                        Encoding: this.camera.stream.encoding,
-                        Resolution: {
-                            Width: this.camera.stream.width,
-                            Height: this.camera.stream.height
-                        },
-                        Quality: this.camera.stream.quality,
-                        RateControl: {
-                            FrameRateLimit: this.camera.stream.framerate,
-                            EncodingInterval: 1,
-                            BitrateLimit: this.camera.stream.bitrate
-                        }
-                    }
-                }
-            ]
-        };
-    }
-
-    // ONVIF: GetStreamUri
-    async GetStreamUri() {
-        logger.debug(`GetStreamUri called for ${this.camera.name} -> ${this.camera.rtspUrl}`);
-        return {
-            MediaUri: {
-                Uri: this.camera.rtspUrl,
-                InvalidAfterConnect: false,
-                InvalidAfterReboot: false,
-                Timeout: "PT60S"
-            }
-        };
-    }
-
-    // ONVIF: GetSnapshotUri
-    async GetSnapshotUri() {
-        logger.debug(`GetSnapshotUri called for ${this.camera.name} -> ${this.camera.snapshotUrl}`);
-        return {
-            MediaUri: {
-                Uri: this.camera.snapshotUrl,
-                InvalidAfterConnect: false,
-                InvalidAfterReboot: false,
-                Timeout: "PT60S"
-            }
-        };
-    }
-
-    // ONVIF: GetVideoSources
-    async GetVideoSources() {
-        return {
-            VideoSources: [
-                {
-                    $: { token: this.videoSourceToken },
-                    Framerate: this.camera.stream.framerate,
-                    Resolution: {
-                        Width: this.camera.stream.width,
-                        Height: this.camera.stream.height
-                    }
-                }
-            ]
-        };
-    }
-
-    // ONVIF: GetVideoSourceConfiguration
-    async GetVideoSourceConfiguration() {
-        return {
+            $attributes: {
+                token: this.profileToken,
+                fixed: true
+            },
+            Name: "VirtualProfile",
             VideoSourceConfiguration: {
-                $: { token: this.videoSourceToken },
+                $attributes: {
+                    token: this.videoSourceConfigToken
+                },
                 Name: "VideoSourceConfig",
                 UseCount: 1,
                 SourceToken: this.videoSourceToken
-            }
-        };
-    }
-
-    // ONVIF: GetVideoEncoderConfiguration
-    async GetVideoEncoderConfiguration() {
-        return {
+            },
             VideoEncoderConfiguration: {
-                $: { token: this.videoEncoderToken },
+                $attributes: {
+                    token: this.videoEncoderToken
+                },
                 Name: "VideoEncoderConfig",
                 UseCount: 1,
                 Encoding: this.camera.stream.encoding,
@@ -118,7 +47,115 @@ class MediaService {
         };
     }
 
-    // ONVIF: GetServiceDefinition
+    // ONVIF: GetProfiles
+    async GetProfiles() {
+        return {
+            Profiles: [
+                this.buildProfile()
+            ]
+        };
+    }
+
+    // ONVIF: GetStreamUri
+    async GetStreamUri(args) {
+        logger.debug(
+            `GetStreamUri called for ${this.camera.name} ` +
+            `(ProfileToken=${args && args.ProfileToken}) -> ${this.camera.rtspUrl}`
+        );
+
+        return {
+            MediaUri: {
+                Uri: this.camera.rtspUrl,
+                InvalidAfterConnect: false,
+                InvalidAfterReboot: false,
+                Timeout: "PT60S"
+            }
+        };
+    }
+
+    // ONVIF: GetSnapshotUri
+    async GetSnapshotUri(args) {
+        logger.debug(
+            `GetSnapshotUri called for ${this.camera.name} ` +
+            `(ProfileToken=${args && args.ProfileToken}) -> ${this.camera.snapshotUrl}`
+        );
+
+        return {
+            MediaUri: {
+                Uri: this.camera.snapshotUrl,
+                InvalidAfterConnect: false,
+                InvalidAfterReboot: false,
+                Timeout: "PT60S"
+            }
+        };
+    }
+
+    // ONVIF: GetVideoSources
+    async GetVideoSources() {
+        return {
+            VideoSources: [
+                {
+                    $attributes: {
+                        token: this.videoSourceToken
+                    },
+                    Framerate: this.camera.stream.framerate,
+                    Resolution: {
+                        Width: this.camera.stream.width,
+                        Height: this.camera.stream.height
+                    }
+                }
+            ]
+        };
+    }
+
+    // ONVIF: GetVideoSourceConfiguration
+    async GetVideoSourceConfiguration(args) {
+        logger.debug(
+            `GetVideoSourceConfiguration called for ${this.camera.name} ` +
+            `(ConfigurationToken=${args && args.ConfigurationToken})`
+        );
+
+        return {
+            VideoSourceConfiguration: {
+                $attributes: {
+                    token: this.videoSourceConfigToken
+                },
+                Name: "VideoSourceConfig",
+                UseCount: 1,
+                SourceToken: this.videoSourceToken
+            }
+        };
+    }
+
+    // ONVIF: GetVideoEncoderConfiguration
+    async GetVideoEncoderConfiguration(args) {
+        logger.debug(
+            `GetVideoEncoderConfiguration called for ${this.camera.name} ` +
+            `(ConfigurationToken=${args && args.ConfigurationToken})`
+        );
+
+        return {
+            VideoEncoderConfiguration: {
+                $attributes: {
+                    token: this.videoEncoderToken
+                },
+                Name: "VideoEncoderConfig",
+                UseCount: 1,
+                Encoding: this.camera.stream.encoding,
+                Resolution: {
+                    Width: this.camera.stream.width,
+                    Height: this.camera.stream.height
+                },
+                Quality: this.camera.stream.quality,
+                RateControl: {
+                    FrameRateLimit: this.camera.stream.framerate,
+                    EncodingInterval: 1,
+                    BitrateLimit: this.camera.stream.bitrate
+                }
+            }
+        };
+    }
+
     GetServiceDefinition() {
         return {
             GetProfiles: this.GetProfiles.bind(this),
@@ -129,7 +166,6 @@ class MediaService {
             GetVideoEncoderConfiguration: this.GetVideoEncoderConfiguration.bind(this)
         };
     }
-
 }
 
 module.exports = MediaService;

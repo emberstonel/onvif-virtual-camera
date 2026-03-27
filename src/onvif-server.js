@@ -53,6 +53,7 @@ class OnvifServer {
         logger.debug(`SOAP auth security keys for ${this.camera.name}: ${Object.keys(security).join(", ")}`);
 
         const token = security.UsernameToken;
+logger.warn(`SOAP UsernameToken raw for ${this.camera.name}: ` + JSON.stringify(token, null, 2));
         if (!token) {
             logger.warn(`SOAP auth missing UsernameToken for ${this.camera.name}`);
             return false;
@@ -64,7 +65,9 @@ class OnvifServer {
         const passwordValue = token.Password;
         const passwordType = typeof passwordValue;
         const nonce = token.Nonce ?? passwordValue?.Nonce;
+logger.warn(`SOAP nonce raw for ${this.camera.name}: ` + JSON.stringify(token.Nonce ?? token.Password?.Nonce, null, 2));        
         const created = token.Created ?? passwordValue?.Created;
+logger.warn(`SOAP created raw for ${this.camera.name}: ` + JSON.stringify(token.Created ?? token.Password?.Created, null, 2));        
         const passwordText = typeof passwordValue === "string"
             ? passwordValue
             : passwordValue?.$value ?? passwordValue?._ ?? passwordValue?.value;

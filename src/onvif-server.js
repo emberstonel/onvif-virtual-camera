@@ -181,6 +181,7 @@ class OnvifServer {
                     services: deviceServiceDef,
                     xml: deviceWsdlXml,
                     forceSoap12Headers: true,
+                    attributesKey: '$attributes',
                     wsdl_options: {
                         attributesKey: '$attributes'
                     }
@@ -190,6 +191,7 @@ class OnvifServer {
                     services: mediaServiceDef,
                     xml: mediaWsdlXml,
                     forceSoap12Headers: true,
+                    attributesKey: '$attributes',
                     wsdl_options: {
                         attributesKey: '$attributes'
                     }

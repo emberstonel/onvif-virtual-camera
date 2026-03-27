@@ -68,7 +68,7 @@ class MediaService {
                 Uri: this.camera.rtspUrl,
                 InvalidAfterConnect: false,
                 InvalidAfterReboot: false,
-                Timeout: "PT60S"
+                Timeout: "PT0S"
             }
         };
     }
@@ -85,7 +85,7 @@ class MediaService {
                 Uri: this.camera.snapshotUrl,
                 InvalidAfterConnect: false,
                 InvalidAfterReboot: false,
-                Timeout: "PT60S"
+                Timeout: "PT0S"
             }
         };
     }

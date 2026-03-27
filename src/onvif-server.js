@@ -1,4 +1,5 @@
 // src/onvif-server.js
+const fs = require("fs");
 const http = require("http");
 const soap = require("soap");
 const path = require("path");
@@ -17,11 +18,33 @@ class OnvifServer {
         this.discoveryService = new DiscoveryService(camera);
     }
 
+    mergeTypesXsd(wsdlXml, xsdXml) {
+        const schemaBody = xsdXml
+            .replace(/^\s*<\?xml[^>]*>\s*/i, "")
+            .match(/<xs:schema\b[^>]*>([\s\S]*?)<\/xs:schema>/i)?.[1];
+
+        if (!schemaBody) {
+            throw new Error("types.xsd content does not contain a valid <xs:schema> block");
+        }
+
+        const merged = wsdlXml.replace(
+            /<xs:import\b[^>]*schemaLocation=["']types\.xsd["'][^>]*\/>\s*/i,
+            schemaBody
+        );
+
+        if (merged === wsdlXml) {
+            throw new Error("types.xsd import not found in WSDL");
+        }
+
+        return merged;
+    }
+
     authenticateRequest(security) {
         if (!this.hasAuth) {
             logger.debug(`SOAP auth disabled for ${this.camera.name}`);
             return true;
         }
+
         if (!security) {
             logger.warn(`SOAP auth missing security object for ${this.camera.name}`);
             return false;
@@ -29,30 +52,86 @@ class OnvifServer {
 
         logger.debug(`SOAP auth security keys for ${this.camera.name}: ${Object.keys(security).join(", ")}`);
 
-        const token = security && security.UsernameToken;
+        const token = security.UsernameToken;
         if (!token) {
             logger.warn(`SOAP auth missing UsernameToken for ${this.camera.name}`);
             return false;
         }
 
         logger.debug(`SOAP UsernameToken keys for ${this.camera.name}: ${Object.keys(token).join(", ")}`);
+
+        const username = token.Username;
+        const passwordValue = token.Password;
+        const passwordType = typeof passwordValue;
+        const nonce = token.Nonce ?? passwordValue?.Nonce;
+        const created = token.Created ?? passwordValue?.Created;
+        const passwordText = typeof passwordValue === "string"
+            ? passwordValue
+            : passwordValue?.$value ?? passwordValue?._ ?? passwordValue?.value;
+
         logger.debug(
             `SOAP auth attempt for ${this.camera.name}: ` +
-            `username=${token.Username || "<missing>"}, ` +
-            `hasPassword=${token.Password !== undefined}, ` +
-            `passwordType=${typeof token.Password}, ` +
-            `hasNonce=${token.Nonce !== undefined}, ` +
-            `hasCreated=${token.Created !== undefined}`
+            `username=${username || "<missing>"}, ` +
+            `hasPassword=${passwordValue !== undefined}, ` +
+            `passwordType=${passwordType}, ` +
+            `hasNonce=${nonce !== undefined}, ` +
+            `hasCreated=${created !== undefined}`
         );
-        if (token.Password && typeof token.Password === "object") {
-            logger.debug(`SOAP Password object keys for ${this.camera.name}: ${Object.keys(token.Password).join(", ")}`);
+
+        if (passwordValue && typeof passwordValue === "object") {
+            logger.debug(`SOAP Password object keys for ${this.camera.name}: ${Object.keys(passwordValue).join(", ")}`);
         }
 
-        const accepted = (token.Username === this.camera.auth.username && token.Password === this.camera.auth.password);
+        if (username !== this.camera.auth.username) {
+            logger.debug(`SOAP auth attempt for ${this.camera.name}: username=${username}, accepted=false (username mismatch)`);
+            return false;
+        }
 
-        logger.debug(`SOAP auth attempt for ${this.camera.name}: username=${token.Username}, accepted=${accepted}`);
+        if (typeof passwordValue === "string") {
+            const accepted = passwordValue === this.camera.auth.password;
+            logger.debug(`SOAP auth attempt for ${this.camera.name}: username=${username}, accepted=${accepted}, mode=PasswordText`);
+            return accepted;
+        }
 
-        return accepted;
+        if (passwordValue && typeof passwordValue === "object") {
+            const crypto = require("crypto");
+            const passwordTypeUri = passwordValue.Type || passwordValue.type || "";
+            const digestValue = passwordText;
+
+            if (!digestValue || !nonce || !created) {
+                logger.warn(`SOAP auth digest missing required fields for ${this.camera.name}`);
+                return false;
+            }
+
+            let nonceBuffer;
+            try {
+                nonceBuffer = Buffer.from(nonce, "base64");
+            } catch (err) {
+                logger.warn(`SOAP auth digest nonce decode failed for ${this.camera.name}: ${err.message}`);
+                return false;
+            }
+
+            const expectedDigest = crypto
+                .createHash("sha1")
+                .update(Buffer.concat([
+                    nonceBuffer,
+                    Buffer.from(created, "utf8"),
+                    Buffer.from(this.camera.auth.password, "utf8")
+                ]))
+                .digest("base64");
+
+            const accepted = digestValue === expectedDigest;
+
+            logger.debug(
+                `SOAP auth attempt for ${this.camera.name}: ` +
+                `username=${username}, accepted=${accepted}, mode=PasswordDigest, type=${passwordTypeUri || "<unknown>"}`
+            );
+
+            return accepted;
+        }
+
+        logger.warn(`SOAP auth unsupported password format for ${this.camera.name}`);
+        return false;
     }
 
     async start() {
@@ -75,8 +154,12 @@ class OnvifServer {
             });
 
             const wsdlFolder = path.resolve(__dirname, 'wsdl');
+            const typesXsdPath = path.join(wsdlFolder, 'types.xsd');
             const deviceWsdlPath = path.join(wsdlFolder, 'device_service.wsdl');
             const mediaWsdlPath = path.join(wsdlFolder, 'media_service.wsdl');
+            const typesXsdXml = fs.readFileSync(typesXsdPath, 'utf8');
+            const deviceWsdlXml = this.mergeTypesXsd(fs.readFileSync(deviceWsdlPath, 'utf8'), typesXsdXml);
+            const mediaWsdlXml = this.mergeTypesXsd(fs.readFileSync(mediaWsdlPath, 'utf8'), typesXsdXml);
 
             const deviceServiceDef = {
                 DeviceService: {
@@ -96,9 +179,8 @@ class OnvifServer {
                 const deviceSoapServer = soap.listen(server, {
                     path: "/onvif/device_service",
                     services: deviceServiceDef,
-                    xml: deviceWsdlPath,
+                    xml: deviceWsdlXml,
                     forceSoap12Headers: true,
-                    wsdl_path: wsdlFolder,
                     wsdl_options: {
                         attributesKey: '$attributes'
                     }
@@ -106,9 +188,8 @@ class OnvifServer {
                 const mediaSoapServer = soap.listen(server, {
                     path: "/onvif/media_service",
                     services: mediaServiceDef,
-                    xml: mediaWsdlPath,
+                    xml: mediaWsdlXml,
                     forceSoap12Headers: true,
-                    wsdl_path: wsdlFolder,
                     wsdl_options: {
                         attributesKey: '$attributes'
                     }

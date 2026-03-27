@@ -47,22 +47,17 @@ async function start() {
 
             // Build a unified camera object for this cam
             const camera = {
-                name: cam.name,
-                model: cam.model,
-                mac: cam.mac,
+                ...cam,
                 interface: iface,
-                ip: ip,
-                onvifPort: 80,
-                rtspUrl: cam.rtspUrl,
-                snapshotUrl: cam.snapshotUrl,
-                host: cam.host
+                ip,
+                onvifPort: 80
             };
 
             // Start ONVIF server
             logger.info(`Attempting to bind camera ${cam.name} to ${iface} with IP ${ip}...`);
             const server = new OnvifServer(camera);
             await server.start();
-            logger.info(`ONVIF server started for ${cam.name} at http://${ip}:${cam.port || 80}/onvif/device_service`);
+            logger.info(`ONVIF server started for ${cam.name} at http://${ip}:80/onvif/device_service`);
 
         } catch (err) {
             startupError = true;

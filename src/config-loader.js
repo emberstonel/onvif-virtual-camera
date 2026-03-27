@@ -39,6 +39,12 @@ function loadConfig(configPath) {
         throw new Error("Config must contain 'virtual_cameras' as an array.");
     }
 
+    // Set runtime values
+    const defaultRuntime = {
+        enable_debug_logs: false
+    };
+    const runtime = {...defaultRuntime, ...(config.runtime || {})};
+
     // Build host source lookup map
     const sourcesByName = {};
     for (const src of config.host_sources) {
@@ -113,7 +119,7 @@ function loadConfig(configPath) {
         };
     });
 
-    return { cameras };
+    return { runtime, cameras };
 }
 
 function fetchStreamDetails(source, cam) {

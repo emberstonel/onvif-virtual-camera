@@ -44,6 +44,7 @@ function loadConfig(configPath) {
         enable_debug_logs: false
     };
     const runtime = {...defaultRuntime, ...(config.runtime || {})};
+    global.runtime = Object.freeze(runtime);
 
     // Build host source lookup map
     const sourcesByName = {};
@@ -116,7 +117,7 @@ function loadConfig(configPath) {
         };
 
         // Fetch stream config
-        const stream = fetchStreamDetails(source, cam);
+        const stream = fetchStreamDetails(source, camera);
 
         return camera;
     });
@@ -139,6 +140,7 @@ function fetchStreamDetails(source, cam) {
     const ffprobePath = process.env.FFPROBE_PATH || "/usr/bin/ffprobe";
     logger.debug('config', `Using ffprobe path: ${ffprobePath}`);
 
+    logger.debug('config', `Calling ffprobe with URL: ${cam.rtspUrl}`);
     const result = spawnSync(
         ffprobePath,
         [
@@ -154,7 +156,6 @@ function fetchStreamDetails(source, cam) {
             timeout: 15000
         }
     );
-    logger.debug('config', `Called ffprobe with URL: ${cam.rtspUrl}`);
 
     if (result.error) {
         logger.warn(`ffprobe failed for '${cam.name}': ${result.error.message}; using defaults`);

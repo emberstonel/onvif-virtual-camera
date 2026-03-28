@@ -23,9 +23,6 @@ async function start() {
         process.exit(1);
     }
 
-    // Setup runtime vars
-    global.runtime = Object.freeze(config.runtime);
-
     // Start one ONVIF server per virtual camera
     for (const cam of config.cameras) {
         try {

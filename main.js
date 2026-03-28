@@ -8,6 +8,7 @@ async function start() {
     
     // Begin logging and error tracking
     let startupError = false;
+    const startupSummaries = [];
     logger.info("Starting ONVIF Virtual Camera Proxy...");
 
     // Load config.yaml from local path (for debug) or the mounted root path
@@ -27,18 +28,17 @@ async function start() {
         try {
             const manager = new CameraManager(cam);
             const summary = await manager.start();
-            logger.info(
-                `Camera startup summary for ${summary.name}: ` +
-                `interface=${summary.interface}, ip=${summary.ip}, ` +
-                `rtsp=${summary.rtspUri}, snapshot=${summary.snapshotUri}`
-            );
+            startupSummaries.push(summary);
+            logger.info(`${summary.name} is up at ${summary.ip} (${summary.interface}) using MAC: ${summary.mac}`);
         } catch (err) {
             startupError = true;
             logger.error(`Failed to initialize camera ${cam.name}: ${err.message}`);
         }
     }
     if (!startupError) {
-        logger.info("Initialization complete. ONVIF servers running.");
+        logger.info(`Initialization complete. ${startupSummaries.length} virtual camera(s) running.`);
+    } else {
+        logger.warn(`Initialization completed with errors. ${startupSummaries.length} virtual camera(s) started successfully.`);
     }
 }
 

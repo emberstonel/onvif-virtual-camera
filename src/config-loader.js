@@ -271,7 +271,6 @@ function fetchStreamDetails(cam, runtime) {
         quality: defaults.quality
     };
 
-    logger.info(`Successfully updated stream details for '${cam.name}'`);
     logger.debug('config', `Detected stream details for '${cam.name}': ${detected.encoding}, ${detected.width}x${detected.height}, ${detected.framerate}fps, ${detected.bitrate}kbps`);
 
     return detected;

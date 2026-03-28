@@ -25,7 +25,7 @@ class OnvifServer {
 
     logLifecycleState() {
         const lifecycle = this.camera.lifecycle;
-        logger.info(
+        logger.debug("lifecycle",
             `Camera lifecycle ready for ${this.camera.name}: ` +
             `http=${lifecycle.httpReady}, snapshot=${lifecycle.snapshotReady}, ` +
             `rtsp=${lifecycle.rtspProxyReady}, discovery=${lifecycle.discoveryReady}`

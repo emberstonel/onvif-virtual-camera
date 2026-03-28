@@ -17,6 +17,8 @@ class CameraManager {
 
         return {
             name: this.cameraConfig.name,
+            mac: this.cameraConfig.mac,
+            sourceHost: this.cameraConfig.host?.hostname || null,
             interface: this.camera?.interface || null,
             ip: this.camera?.ip || null,
             deviceServiceUrl: this.camera?.endpoints?.deviceServiceUrl || null,

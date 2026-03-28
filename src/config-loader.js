@@ -15,7 +15,6 @@ function getDefaultRuntime() {
     return {
         enable_debug_logs: false,
         probe_streams: true,
-        probe_path: process.env.FFPROBE_PATH || "/usr/bin/ffprobe",
         probe_timeout_ms: 15000
     };
 }
@@ -146,6 +145,7 @@ function loadConfig(configPath) {
             rtspUrl,
             snapshotUrl,
             streamConfig: normalizeConfiguredStream(cam.stream),
+            identity: normalizeIdentity(cam),
             auth: hasAuth(source) ? {
                 username: source.auth.username,
                 password: source.auth.password
@@ -170,6 +170,14 @@ function resolveStreamDetails(cam, runtime) {
     const defaults = getDefaultStreamConfig();
     const configured = cam.streamConfig || {};
 
+    if (cam.streamConfig) {
+        logger.info(`Skipping ffprobe for '${cam.name}' because stream config was provided`);
+        return {
+            ...defaults,
+            ...configured
+        };
+    }
+
     if (!runtime.probe_streams) {
         logger.info(`Skipping ffprobe for '${cam.name}' because runtime.probe_streams=false`);
         return {
@@ -188,7 +196,7 @@ function resolveStreamDetails(cam, runtime) {
 
 function fetchStreamDetails(cam, runtime) {
     const defaults = getDefaultStreamConfig();
-    const ffprobePath = runtime.probe_path;
+    const ffprobePath = process.env.FFPROBE_PATH || "/usr/bin/ffprobe";
     logger.debug('config', `Using ffprobe path: ${ffprobePath}`);
 
     logger.debug('config', `Calling ffprobe with URL: ${cam.rtspUrl}`);
@@ -270,11 +278,11 @@ function fetchStreamDetails(cam, runtime) {
 }
 
 function normalizeConfiguredStream(stream) {
-    if (!stream) {
-        return {};
+    if (stream === undefined || stream === null) {
+        return null;
     }
 
-    return {
+    const normalized = {
         encoding: stream.encoding,
         width: normalizePositiveInteger(stream.width, "stream.width"),
         height: normalizePositiveInteger(stream.height, "stream.height"),
@@ -282,15 +290,32 @@ function normalizeConfiguredStream(stream) {
         bitrate: normalizePositiveInteger(stream.bitrate, "stream.bitrate"),
         quality: normalizePositiveNumber(stream.quality, "stream.quality")
     };
+
+    const requiredKeys = ["encoding", "width", "height", "framerate", "bitrate", "quality"];
+    const missingKeys = requiredKeys.filter((key) => normalized[key] === undefined);
+    if (missingKeys.length > 0) {
+        throw new Error(`stream config is missing required field(s): ${missingKeys.join(", ")}.`);
+    }
+
+    return normalized;
+}
+
+function normalizeIdentity(cam) {
+    return {
+        manufacturer: normalizeOptionalString(cam.manufacturer, "manufacturer") || "ONVIF Virtual Camera",
+        model: normalizeOptionalString(cam.model, "model") || cam.name,
+        firmwareVersion: normalizeOptionalString(cam.firmware_version, "firmware_version") || "1.0",
+        serialNumber: normalizeOptionalString(cam.serial_number, "serial_number")
+            || cam.mac.replace(/:/g, "").toUpperCase(),
+        hardwareId: normalizeOptionalString(cam.hardware_id, "hardware_id")
+            || normalizeOptionalString(cam.model, "model")
+            || cam.mac.replace(/:/g, "").toUpperCase()
+    };
 }
 
 function validateRuntimeSettings(runtime) {
     if (typeof runtime.probe_streams !== "boolean") {
         throw new Error("runtime.probe_streams must be true or false.");
-    }
-
-    if (typeof runtime.probe_path !== "string" || runtime.probe_path.trim() === "") {
-        throw new Error("runtime.probe_path must be a non-empty string.");
     }
 
     normalizePositiveInteger(runtime.probe_timeout_ms, "runtime.probe_timeout_ms");
@@ -334,6 +359,8 @@ function validateVirtualCamera(cam) {
     if (cam.stream) {
         normalizeConfiguredStream(cam.stream);
     }
+
+    normalizeIdentity(cam);
 }
 
 function normalizePositiveInteger(value, label) {
@@ -360,6 +387,23 @@ function normalizePositiveNumber(value, label) {
     }
 
     return parsed;
+}
+
+function normalizeOptionalString(value, label) {
+    if (value === undefined || value === null) {
+        return undefined;
+    }
+
+    if (typeof value !== "string") {
+        throw new Error(`${label} must be a string.`);
+    }
+
+    const trimmed = value.trim();
+    if (trimmed === "") {
+        throw new Error(`${label} must not be empty.`);
+    }
+
+    return trimmed;
 }
 
 module.exports = { loadConfig };

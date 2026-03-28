@@ -16,6 +16,17 @@ class DiscoveryService {
         this.xaddr = this.buildXAddr();
     }
 
+    getDiscoveryScopes() {
+        const scopes = [
+            "onvif://www.onvif.org/type/video_encoder",
+            `onvif://www.onvif.org/name/${this.escapeScope(this.camera.name)}`,
+            `onvif://www.onvif.org/hardware/${this.escapeScope(this.camera.identity.model)}`,
+            `onvif://www.onvif.org/location/${this.escapeScope((this.camera.host && this.camera.host.hostname) || "virtual")}`
+        ];
+
+        return scopes.join("\n          ");
+    }
+
     buildEndpointAddress() {
         const macClean = this.camera.mac.toLowerCase().replace(/[^0-9a-f]/g, "");
         const padded = (macClean + "00000000000000000000000000000000").slice(0, 32);
@@ -110,8 +121,13 @@ class DiscoveryService {
             `(endpoint=${this.endpointAddress}, xaddr=${this.xaddr}, mac=${this.camera.mac}, ip=${this.camera.ip})`
         );
 
-        // Optional: filter by Types/Scopes if needed
-        // For now, respond to all Probes
+        const probeTypes = this.extractProbeTypes(xml);
+        if (probeTypes && !probeTypes.includes("NetworkVideoTransmitter")) {
+            logger.debug("discovery",
+                `Ignoring WS-Discovery Probe for ${this.camera.name} because Types=${probeTypes}`
+            );
+            return;
+        }
 
         const relatesTo = this.extractMessageId(xml);
         const responseXml = this.buildProbeMatchesResponse(relatesTo);
@@ -157,10 +173,7 @@ buildProbeMatchesResponse(relatesTo) {
         </wsa:EndpointReference>
         <wsd:Types>dn:NetworkVideoTransmitter</wsd:Types>
         <wsd:Scopes>
-          onvif://www.onvif.org/type/video_encoder
-          onvif://www.onvif.org/name/${this.escapeScope(this.camera.name)}
-          onvif://www.onvif.org/hardware/${this.escapeScope(this.camera.model)}
-          onvif://www.onvif.org/location/${this.escapeScope((this.camera.host && this.camera.host.hostname) || "virtual")}
+          ${this.getDiscoveryScopes()}
         </wsd:Scopes>
         <wsd:XAddrs>${this.xaddr}</wsd:XAddrs>
         <wsd:MetadataVersion>1</wsd:MetadataVersion>
@@ -185,6 +198,11 @@ buildProbeMatchesResponse(relatesTo) {
 
     extractMessageId(xml) {
         const match = xml.match(/<[^:>]*:?MessageID[^>]*>([^<]+)<\/[^:>]*:?MessageID>/i);
+        return match ? match[1].trim() : null;
+    }
+
+    extractProbeTypes(xml) {
+        const match = xml.match(/<[^:>]*:?Types[^>]*>([^<]+)<\/[^:>]*:?Types>/i);
         return match ? match[1].trim() : null;
     }
 }

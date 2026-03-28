@@ -1,7 +1,6 @@
 runtime:
   enable_debug_logs: false
   probe_streams: true
-  probe_path: /usr/bin/ffprobe
   probe_timeout_ms: 15000
 
 host_sources:
@@ -24,6 +23,7 @@ host_sources:
 virtual_cameras:
   - name: VirtualCam1
     model: "VCam-1080p"
+    manufacturer: "VirtualCam"
     mac: "02:42:ac:11:00:11"
     host_source: cam1
     rtsp_path: "/live1"

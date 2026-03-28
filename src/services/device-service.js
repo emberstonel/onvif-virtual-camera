@@ -5,6 +5,22 @@ class DeviceService {
         this.camera = camera;
     }
 
+    getTimeZoneOffsetString(date) {
+        const offsetMinutes = -date.getTimezoneOffset();
+        const sign = offsetMinutes >= 0 ? "+" : "-";
+        const absoluteMinutes = Math.abs(offsetMinutes);
+        const hours = String(Math.floor(absoluteMinutes / 60)).padStart(2, "0");
+        const minutes = String(absoluteMinutes % 60).padStart(2, "0");
+
+        return `UTC${sign}${hours}:${minutes}`;
+    }
+
+    isDaylightSavingsObserved(date) {
+        const januaryOffset = new Date(date.getFullYear(), 0, 1).getTimezoneOffset();
+        const julyOffset = new Date(date.getFullYear(), 6, 1).getTimezoneOffset();
+        return date.getTimezoneOffset() < Math.max(januaryOffset, julyOffset);
+    }
+
     buildDeviceCapabilities() {
         return {
             XAddr: this.camera.endpoints.deviceServiceUrl,
@@ -51,11 +67,11 @@ class DeviceService {
     // ONVIF: GetDeviceInformation
     async GetDeviceInformation() {
         return {
-            Manufacturer: "VirtualCam",
-            Model: this.camera.model || this.camera.name,
-            FirmwareVersion: "1.0",
-            SerialNumber: this.camera.mac.replace(/:/g, "").toUpperCase(),
-            HardwareId: this.camera.mac.replace(/:/g, "").toUpperCase()
+            Manufacturer: this.camera.identity.manufacturer,
+            Model: this.camera.identity.model,
+            FirmwareVersion: this.camera.identity.firmwareVersion,
+            SerialNumber: this.camera.identity.serialNumber,
+            HardwareId: this.camera.identity.hardwareId
         };
     }
 
@@ -66,9 +82,9 @@ class DeviceService {
         return {
             SystemDateAndTime: {
                 DateTimeType: "NTP",
-                DaylightSavings: false,
+                DaylightSavings: this.isDaylightSavingsObserved(now),
                 TimeZone: {
-                    TZ: "UTC"
+                    TZ: this.getTimeZoneOffsetString(now)
                 },
                 UTCDateTime: {
                     Time: {

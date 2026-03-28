@@ -57,6 +57,7 @@ class CameraManager {
                 snapshotPath: this.cameraConfig.snapshotPath,
                 rtspUrl: this.cameraConfig.rtspUrl
             },
+            identity: this.cameraConfig.identity,
             lifecycle: {
                 configLoaded: true,
                 networkResolved: true,

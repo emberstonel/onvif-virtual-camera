@@ -1,4 +1,5 @@
 const fs = require("fs");
+const { spawnSync } = require("child_process");
 const yaml = require("js-yaml");
 const logger = require("./log-manager");
 
@@ -128,8 +129,6 @@ function loadConfig(configPath) {
 }
 
 function fetchStreamDetails(source, cam) {
-    const { spawnSync } = require("child_process");
-
     const defaults = {
         encoding: "H264",
         width: 1920,

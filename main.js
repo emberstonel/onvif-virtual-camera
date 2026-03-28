@@ -2,9 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const logger = require("./src/log-manager");
 const configLoader = require("./src/config-loader");
-const networkManager = require("./src/network-manager");
-const { createCameraRuntime } = require("./src/camera-runtime");
-const OnvifServer = require("./src/onvif-server");
+const CameraManager = require("./src/camera-manager");
 
 async function start() {
     
@@ -27,40 +25,19 @@ async function start() {
     // Start one ONVIF server per virtual camera
     for (const cam of config.cameras) {
         try {
-            logger.info(`Initializing virtual camera: ${cam.name}`);
-
-            // Determine interface name by MAC
-            const iface = networkManager.findInterfaceByMac(cam.mac);
-            if (!iface) {
-                logger.error(`No interface found for MAC ${cam.mac} (camera ${cam.name})`);
-                continue;
-            }
-
-            // Get assigned IP address
-            const ip = networkManager.getInterfaceIp(iface);
-            if (!ip) {
-                logger.error(`Interface ${iface} has no IPv4 address (camera ${cam.name})`);
-                continue;
-            }
-
-            // Build a unified camera object for this cam
-            const camera = createCameraRuntime(cam, {
-                interface: iface,
-                ip
-            });
-
-            // Start ONVIF server
-            logger.info(`Attempting to bind camera ${cam.name} to ${iface} with IP ${ip}...`);
-            const server = new OnvifServer(camera);
-            await server.start();
-            logger.info(`ONVIF server started for ${cam.name} at http://${ip}:80/onvif/device_service`);
-
+            const manager = new CameraManager(cam);
+            const summary = await manager.start();
+            logger.info(
+                `Camera startup summary for ${summary.name}: ` +
+                `interface=${summary.interface}, ip=${summary.ip}, ` +
+                `rtsp=${summary.rtspUri}, snapshot=${summary.snapshotUri}`
+            );
         } catch (err) {
             startupError = true;
             logger.error(`Failed to initialize camera ${cam.name}: ${err.message}`);
         }
     }
-    if(!startupError){
+    if (!startupError) {
         logger.info("Initialization complete. ONVIF servers running.");
     }
 }

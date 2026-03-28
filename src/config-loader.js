@@ -136,8 +136,11 @@ function fetchStreamDetails(source, cam) {
         quality: 5
     };
 
+    const ffprobePath = process.env.FFPROBE_PATH || "/usr/bin/ffprobe";
+    logger.debug('config', `Using ffprobe path: ${ffprobePath}`);
+
     const result = spawnSync(
-        process.env.FFPROBE_PATH || "ffprobe",
+        ffprobePath,
         [
             "-v", "error",
             "-rtsp_transport", "tcp",
@@ -151,6 +154,7 @@ function fetchStreamDetails(source, cam) {
             timeout: 15000
         }
     );
+    logger.debug('config', `Called ffprobe with URL: ${cam.rtspUrl}`);
 
     if (result.error) {
         logger.warn(`ffprobe failed for '${cam.name}': ${result.error.message}; using defaults`);

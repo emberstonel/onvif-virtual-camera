@@ -7,7 +7,7 @@ class DeviceService {
 
     buildDeviceCapabilities() {
         return {
-            XAddr: `http://${this.camera.ip}/onvif/device_service`,
+            XAddr: this.camera.endpoints.deviceServiceUrl,
             System: {
                 SupportedVersions: {
                     Major: 2,
@@ -34,7 +34,7 @@ class DeviceService {
 
     buildMediaCapabilities() {
         return {
-            XAddr: `http://${this.camera.ip}/onvif/media_service`,
+            XAddr: this.camera.endpoints.mediaServiceUrl,
             StreamingCapabilities: {
                 RTPMulticast: false,
                 RTP_TCP: true,
@@ -138,7 +138,7 @@ class DeviceService {
         const services = [
             {
                 Namespace: "http://www.onvif.org/ver10/device/wsdl",
-                XAddr: `http://${this.camera.ip}/onvif/device_service`,
+                XAddr: this.camera.endpoints.deviceServiceUrl,
                 Version: {
                     Major: 2,
                     Minor: 5
@@ -146,7 +146,7 @@ class DeviceService {
             },
             {
                 Namespace: "http://www.onvif.org/ver10/media/wsdl",
-                XAddr: `http://${this.camera.ip}/onvif/media_service`,
+                XAddr: this.camera.endpoints.mediaServiceUrl,
                 Version: {
                     Major: 2,
                     Minor: 5

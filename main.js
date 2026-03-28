@@ -3,6 +3,7 @@ const path = require("path");
 const logger = require("./src/log-manager");
 const configLoader = require("./src/config-loader");
 const networkManager = require("./src/network-manager");
+const { createCameraRuntime } = require("./src/camera-runtime");
 const OnvifServer = require("./src/onvif-server");
 
 async function start() {
@@ -43,12 +44,10 @@ async function start() {
             }
 
             // Build a unified camera object for this cam
-            const camera = {
-                ...cam,
+            const camera = createCameraRuntime(cam, {
                 interface: iface,
-                ip,
-                onvifPort: 80
-            };
+                ip
+            });
 
             // Start ONVIF server
             logger.info(`Attempting to bind camera ${cam.name} to ${iface} with IP ${ip}...`);

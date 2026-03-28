@@ -4,40 +4,21 @@ const http = require("http");
 const soap = require("soap");
 const path = require("path");
 const logger = require("./log-manager");
-const TcpProxy = require("node-tcp-proxy");
 const DeviceService = require("./services/device-service");
 const MediaService = require("./services/media-service");
 const DiscoveryService = require("./services/discovery-service");
+const RtspProxyService = require("./services/rtsp-proxy-service");
 
 class OnvifServer {
     constructor(camera) {
         this.camera = camera;
         this.hasAuth = !!(this.camera.auth && this.camera.auth.username && this.camera.auth.password);
-        this.lastSoapMethod = 'unknown'
-        this.rtspProxyStarted = false;
+        this.lastSoapMethod = "unknown";
 
         this.deviceService = new DeviceService(camera);
         this.mediaService = new MediaService(camera);
         this.discoveryService = new DiscoveryService(camera);
-    }
-
-    startRtspProxy() {
-        // Proof-of-concept only: hardcode one proxy for one virtual camera
-        if (this.camera.name !== "VirtualCam-1A" || this.rtspProxyStarted) {
-            return;
-        }
-
-        const sourcePort = 8554;
-        const destinationAddress = this.camera.host.hostname;
-        const destinationPort = this.camera.host.rtsp_port;
-
-        logger.info(
-            `Starting RTSP TCP proxy for ${this.camera.name}: ` +
-            `${this.camera.ip}:${sourcePort} -> ${destinationAddress}:${destinationPort}`
-        );
-
-        TcpProxy.createProxy(sourcePort, destinationAddress, destinationPort, this.camera.ip);
-        this.rtspProxyStarted = true;
+        this.rtspProxyService = new RtspProxyService(camera);
     }
 
     mergeTypesXsd(wsdlXml, xsdXml) {
@@ -203,6 +184,7 @@ class OnvifServer {
 
             server.listen(this.camera.onvifPort, this.camera.ip, async () => {
                 logger.info(`HTTP listener ready for ${this.camera.name} on ${this.camera.ip}:${this.camera.onvifPort}`);
+                this.camera.lifecycle.httpReady = true;
 
                 const deviceSoapServer = soap.listen(server, {
                     path: "/onvif/device_service",
@@ -250,7 +232,7 @@ class OnvifServer {
                 }
 
                 try {
-                    this.startRtspProxy();
+                    this.rtspProxyService.start();
                 } catch (err) {
                     logger.error(`Failed to start RTSP proxy for ${this.camera.name}: ${err.message}`);
                 }

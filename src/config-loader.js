@@ -103,6 +103,8 @@ function loadConfig(configPath) {
             name: cam.name,
             model: cam.model,
             mac,
+            rtspPath,
+            snapshotPath,
             rtspUrl,
             snapshotUrl,
             auth: hasAuth(source) ? {

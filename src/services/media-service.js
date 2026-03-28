@@ -58,11 +58,9 @@ class MediaService {
 
     // ONVIF: GetStreamUri
     async GetStreamUri(args) {
-        const streamUri = this.camera.name === "VirtualCam-1A"
-            ? `rtsp://${this.camera.ip}:8554/rtsp/defaultPrimary-1?streamType=u`
-            : this.camera.rtspUrl;
+        const streamUri = this.camera.endpoints.rtspUri;
 
-        logger.debug(
+        logger.debug("media",
             `GetStreamUri called for ${this.camera.name} ` +
             `(ProfileToken=${args && args.ProfileToken}) -> ${streamUri}`
         );
@@ -81,12 +79,12 @@ class MediaService {
     async GetSnapshotUri(args) {
         logger.debug('media',
             `GetSnapshotUri called for ${this.camera.name} ` +
-            `(ProfileToken=${args && args.ProfileToken}) -> ${this.camera.snapshotUrl}`
+            `(ProfileToken=${args && args.ProfileToken}) -> ${this.camera.endpoints.snapshotUri}`
         );
 
         return {
             MediaUri: {
-                Uri: this.camera.snapshotUrl,
+                Uri: this.camera.endpoints.snapshotUri,
                 InvalidAfterConnect: false,
                 InvalidAfterReboot: false,
                 Timeout: "PT0S"

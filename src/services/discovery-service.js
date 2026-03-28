@@ -30,8 +30,7 @@ class DiscoveryService {
     }
 
     buildXAddr() {
-        const port = this.camera.onvifPort || 80;
-        return `http://${this.camera.ip}:${port}/onvif/device_service`;
+        return this.camera.endpoints.deviceServiceUrl;
     }
 
     start() {
@@ -69,6 +68,7 @@ class DiscoveryService {
                 }
 
                 this.running = true;
+                this.camera.lifecycle.discoveryReady = true;
 
                 logger.info(
                     `WS-Discovery listening for ${this.camera.name} on ${this.camera.ip}:${DISCOVERY_PORT} (XAddr: ${this.xaddr})`
@@ -90,6 +90,7 @@ class DiscoveryService {
                     `WS-Discovery stopped for ${this.camera.name} on ${this.camera.ip}`
                 );
                 this.running = false;
+                this.camera.lifecycle.discoveryReady = false;
                 this.socket = null;
                 resolve();
             });

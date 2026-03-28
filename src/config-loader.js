@@ -30,6 +30,12 @@ function getDefaultStreamConfig() {
     };
 }
 
+function getMinimumStreamConfig() {
+    return {
+        framerate: 5
+    };
+}
+
 function loadConfig(configPath) {
     if (!fs.existsSync(configPath)) {
         throw new Error(`Config file not found at ${configPath}`);
@@ -196,6 +202,7 @@ function resolveStreamDetails(cam, runtime) {
 
 function fetchStreamDetails(cam, runtime) {
     const defaults = getDefaultStreamConfig();
+    const minimums = getMinimumStreamConfig();
     const ffprobePath = process.env.FFPROBE_PATH || "/usr/bin/ffprobe";
     logger.debug('config', `Using ffprobe path: ${ffprobePath}`);
 
@@ -264,7 +271,7 @@ function fetchStreamDetails(cam, runtime) {
         encoding: codecMap[String(stream.codec_name || "").toLowerCase()] || defaults.encoding,
         width: Number.isFinite(stream.width) && stream.width > 0 ? stream.width : defaults.width,
         height: Number.isFinite(stream.height) && stream.height > 0 ? stream.height : defaults.height,
-        framerate: parseFrameRate(stream.avg_frame_rate) || defaults.framerate,
+        framerate: Math.max(parseFrameRate(stream.avg_frame_rate) || defaults.framerate, minimums.framerate),
         bitrate: Number.isFinite(Number(stream.bit_rate)) && Number(stream.bit_rate) > 0
             ? Math.round(Number(stream.bit_rate) / 1000)
             : defaults.bitrate,

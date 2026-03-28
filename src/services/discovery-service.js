@@ -104,7 +104,7 @@ class DiscoveryService {
             return;
         }
 
-        logger.debug(
+        logger.debug('discovery',
             `WS-Discovery Probe received for ${this.camera.name} from ${rinfo.address}:${rinfo.port} ` +
             `(endpoint=${this.endpointAddress}, xaddr=${this.xaddr}, mac=${this.camera.mac}, ip=${this.camera.ip})`
         );
@@ -122,7 +122,7 @@ class DiscoveryService {
                     `Failed to send ProbeMatches for ${this.camera.name} to ${rinfo.address}:${rinfo.port} - ${err.message}`
                 );
             } else {
-                logger.debug(
+                logger.debug('discovery',
                     `ProbeMatches sent for ${this.camera.name} to ${rinfo.address}:${rinfo.port} ` +
                     `(endpoint=${this.endpointAddress}, xaddr=${this.xaddr}, mac=${this.camera.mac}, ip=${this.camera.ip})`
                 );

@@ -121,7 +121,7 @@ class DeviceService {
             capabilities.Media = this.buildMediaCapabilities();
         }
 
-        logger.debug(
+        logger.debug('device', 
             `GetCapabilities called for ${this.camera.name} ` +
             `(Category=${JSON.stringify(category)})`
         );
@@ -159,7 +159,7 @@ class DeviceService {
             services[1].Capabilities = this.buildMediaCapabilities();
         }
 
-        logger.debug(`GetServices called for ${this.camera.name} ` + `(IncludeCapability=${includeCapability})`);
+        logger.debug('device',`GetServices called for ${this.camera.name} ` + `(IncludeCapability=${includeCapability})`);
 
         return {
             Service: services

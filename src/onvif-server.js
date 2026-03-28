@@ -12,6 +12,7 @@ class OnvifServer {
     constructor(camera) {
         this.camera = camera;
         this.hasAuth = !!(this.camera.auth && this.camera.auth.username && this.camera.auth.password);
+        this.lastSoapMethod = 'unknown'
 
         this.deviceService = new DeviceService(camera);
         this.mediaService = new MediaService(camera);
@@ -41,15 +42,15 @@ class OnvifServer {
 
     authenticateRequest(security) {
         if (!this.hasAuth) {
-            logger.debug(`SOAP auth disabled for ${this.camera.name}`);
+            logger.debug('auth', `SOAP auth disabled for ${this.camera.name}`);
             return true;
         }
         if (!security) {
-            logger.warn(`SOAP auth missing security object for ${this.camera.name}`);
+            logger.warn(`SOAP auth missing security object for ${this.camera.name} (method=${this.lastSoapMethod})`);
             return false;
         }
 
-        logger.debug(`SOAP auth security keys for ${this.camera.name}: ${Object.keys(security).join(", ")}`);
+        logger.debug('auth', `SOAP auth security keys for ${this.camera.name}: ${Object.keys(security).join(", ")}`);
 
         const token = security.UsernameToken;
         if (!token) {
@@ -57,7 +58,7 @@ class OnvifServer {
             return false;
         }
 
-        logger.debug(`SOAP UsernameToken keys for ${this.camera.name}: ${Object.keys(token).join(", ")}`);
+        logger.debug('auth', `SOAP UsernameToken keys for ${this.camera.name}: ${Object.keys(token).join(", ")}`);
 
         const username = token.Username;
         const passwordRaw = token.Password;
@@ -76,7 +77,7 @@ class OnvifServer {
             ? createdRaw
             : createdRaw?.$value ?? createdRaw?._ ?? createdRaw?.value;
 
-        logger.debug(
+        logger.debug('auth', 
             `SOAP auth attempt for ${this.camera.name}: ` +
             `username=${username || "<missing>"}, ` +
             `hasPassword=${passwordRaw !== undefined}, ` +
@@ -86,17 +87,17 @@ class OnvifServer {
         );
 
         if (passwordRaw && typeof passwordRaw === "object") {
-            logger.debug(`SOAP Password object keys for ${this.camera.name}: ${Object.keys(passwordRaw).join(", ")}`);
+            logger.debug('auth', `SOAP Password object keys for ${this.camera.name}: ${Object.keys(passwordRaw).join(", ")}`);
         }
 
         if (username !== this.camera.auth.username) {
-            logger.debug(`SOAP auth attempt for ${this.camera.name}: username=${username}, accepted=false (username mismatch)`);
+            logger.debug('auth', `SOAP auth attempt for ${this.camera.name}: username=${username}, accepted=false (username mismatch)`);
             return false;
         }
 
         if (typeof passwordRaw === "string") {
             const accepted = passwordRaw === this.camera.auth.password;
-            logger.debug(`SOAP auth attempt for ${this.camera.name}: username=${username}, accepted=${accepted}, mode=PasswordText`);
+            logger.debug('auth', `SOAP auth attempt for ${this.camera.name}: username=${username}, accepted=${accepted}, mode=PasswordText`);
             return accepted;
         }
 
@@ -128,7 +129,7 @@ class OnvifServer {
 
             const accepted = passwordValue === expectedDigest;
 
-            logger.debug(
+            logger.debug('auth', 
                 `SOAP auth attempt for ${this.camera.name}: ` +
                 `username=${username}, accepted=${accepted}, mode=PasswordDigest, type=${passwordTypeUri || "<unknown>"}`
             );
@@ -155,7 +156,7 @@ class OnvifServer {
                 logger.error(`HTTP clientError for ${this.camera.name}: ${err.message}`);
             });
             server.prependListener("request", (req, res) => {
-                logger.debug(`HTTP request for ${this.camera.name}: ${req.method} ${req.url} from ${req.socket.remoteAddress}`
+                logger.debug('http', `HTTP request for ${this.camera.name}: ${req.method} ${req.url} from ${req.socket.remoteAddress}`
                 );
             });
 
@@ -207,13 +208,15 @@ class OnvifServer {
                 mediaSoapServer.authenticate = (security) => this.authenticateRequest(security);
 
                 deviceSoapServer.on("request", (xml, methodName) => {
-                    logger.debug(`SOAP Device request received for ${this.camera.name}: ${methodName}`);
+                    this.lastSoapMethod = methodName;
+                    logger.debug('device', `SOAP Device request received for ${this.camera.name}: ${methodName}`);
                 });
                 deviceSoapServer.on("error", (err) => {
                     logger.error(`SOAP Device error for ${this.camera.name}: ${err.message}`);
                 });
                 mediaSoapServer.on("request", (xml, methodName) => {
-                    logger.debug(`SOAP Media request received for ${this.camera.name}: ${methodName}`);
+                    this.lastSoapMethod = methodName;
+                    logger.debug('media', `SOAP Media request received for ${this.camera.name}: ${methodName}`);
                 });
                 mediaSoapServer.on("error", (err) => {
                     logger.error(`SOAP Media error for ${this.camera.name}: ${err.message}`);

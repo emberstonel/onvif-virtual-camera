@@ -58,7 +58,7 @@ class MediaService {
 
     // ONVIF: GetStreamUri
     async GetStreamUri(args) {
-        logger.debug(
+        logger.debug('media',
             `GetStreamUri called for ${this.camera.name} ` +
             `(ProfileToken=${args && args.ProfileToken}) -> ${this.camera.rtspUrl}`
         );
@@ -75,7 +75,7 @@ class MediaService {
 
     // ONVIF: GetSnapshotUri
     async GetSnapshotUri(args) {
-        logger.debug(
+        logger.debug('media',
             `GetSnapshotUri called for ${this.camera.name} ` +
             `(ProfileToken=${args && args.ProfileToken}) -> ${this.camera.snapshotUrl}`
         );
@@ -110,7 +110,7 @@ class MediaService {
 
     // ONVIF: GetVideoSourceConfiguration
     async GetVideoSourceConfiguration(args) {
-        logger.debug(
+        logger.debug('media',
             `GetVideoSourceConfiguration called for ${this.camera.name} ` +
             `(ConfigurationToken=${args && args.ConfigurationToken})`
         );
@@ -129,7 +129,7 @@ class MediaService {
 
     // ONVIF: GetVideoEncoderConfiguration
     async GetVideoEncoderConfiguration(args) {
-        logger.debug(
+        logger.debug('media',
             `GetVideoEncoderConfiguration called for ${this.camera.name} ` +
             `(ConfigurationToken=${args && args.ConfigurationToken})`
         );

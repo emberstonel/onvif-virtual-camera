@@ -9,8 +9,9 @@ function format(level, msg) {
 }
 
 module.exports = {
-    debug(msg, ...args) {
-        if(global.runtime.enable_debug_logs){
+    debug(filter, msg, ...args) {
+        const debugMatch = global.runtime.enable_debug_logs === true || (Array.isArray(global.runtime.enable_debug_logs) && global.runtime.enable_debug_logs.includes(filter));
+        if(debugMatch){
             console.debug(format("DEBUG", util.format(msg, ...args)));
         };
     },

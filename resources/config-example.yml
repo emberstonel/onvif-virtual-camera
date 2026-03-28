@@ -1,3 +1,9 @@
+runtime:
+  enable_debug_logs: false
+  probe_streams: true
+  probe_path: /usr/bin/ffprobe
+  probe_timeout_ms: 15000
+
 host_sources:
   - name: cam1
     hostname: 192.168.1.50
@@ -22,6 +28,13 @@ virtual_cameras:
     host_source: cam1
     rtsp_path: "/live1"
     snapshot_path: "/snapshot1.jpg"
+    stream:
+      encoding: "H264"
+      width: 1920
+      height: 1080
+      framerate: 15
+      bitrate: 2048
+      quality: 5
 
   - name: VirtualCam2
     model: "VCam-1080p"

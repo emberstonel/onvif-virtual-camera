@@ -11,6 +11,26 @@ function hasAuth(object) {
     );
 }
 
+function getDefaultRuntime() {
+    return {
+        enable_debug_logs: false,
+        probe_streams: true,
+        probe_path: process.env.FFPROBE_PATH || "/usr/bin/ffprobe",
+        probe_timeout_ms: 15000
+    };
+}
+
+function getDefaultStreamConfig() {
+    return {
+        encoding: "H264",
+        width: 1920,
+        height: 1080,
+        framerate: 15,
+        bitrate: 2048,
+        quality: 5
+    };
+}
+
 function loadConfig(configPath) {
     if (!fs.existsSync(configPath)) {
         throw new Error(`Config file not found at ${configPath}`);
@@ -41,16 +61,21 @@ function loadConfig(configPath) {
     }
 
     // Set runtime values
-    const defaultRuntime = {
-        enable_debug_logs: false
+    const runtime = {
+        ...getDefaultRuntime(),
+        ...(config.runtime || {})
     };
-    const runtime = {...defaultRuntime, ...(config.runtime || {})};
+    validateRuntimeSettings(runtime);
     global.runtime = Object.freeze(runtime);
 
     // Build host source lookup map
     const sourcesByName = {};
     for (const src of config.host_sources) {
         validateHostSource(src);
+
+        if (sourcesByName[src.name]) {
+            throw new Error(`Duplicate host_source name '${src.name}' found in config.`);
+        }
 
         sourcesByName[src.name] = {
             hostname: src.hostname,
@@ -64,8 +89,16 @@ function loadConfig(configPath) {
     }
 
     // Resolve virtual cameras
+    const seenCameraNames = new Set();
+    const seenCameraMacs = new Set();
+
     const cameras = config.virtual_cameras.map((cam) => {
         validateVirtualCamera(cam);
+
+        if (seenCameraNames.has(cam.name)) {
+            throw new Error(`Duplicate virtual_camera name '${cam.name}' found in config.`);
+        }
+        seenCameraNames.add(cam.name);
 
         const source = sourcesByName[cam.host_source];
         if (!source) {
@@ -76,6 +109,10 @@ function loadConfig(configPath) {
 
         // Normalize MAC
         const mac = cam.mac.toLowerCase();
+        if (seenCameraMacs.has(mac)) {
+            throw new Error(`Duplicate virtual_camera MAC '${mac}' found in config.`);
+        }
+        seenCameraMacs.add(mac);
 
         // Ensure paths start with '/'
         const rtspPath = cam.rtsp_path.startsWith("/")
@@ -108,6 +145,7 @@ function loadConfig(configPath) {
             snapshotPath,
             rtspUrl,
             snapshotUrl,
+            streamConfig: normalizeConfiguredStream(cam.stream),
             auth: hasAuth(source) ? {
                 username: source.auth.username,
                 password: source.auth.password
@@ -120,7 +158,7 @@ function loadConfig(configPath) {
         };
 
         // Fetch stream config
-        camera.stream = fetchStreamDetails(source, camera);
+        camera.stream = resolveStreamDetails(camera, runtime);
 
         return camera;
     });
@@ -128,17 +166,29 @@ function loadConfig(configPath) {
     return { runtime, cameras };
 }
 
-function fetchStreamDetails(source, cam) {
-    const defaults = {
-        encoding: "H264",
-        width: 1920,
-        height: 1080,
-        framerate: 15,
-        bitrate: 2048,
-        quality: 5
-    };
+function resolveStreamDetails(cam, runtime) {
+    const defaults = getDefaultStreamConfig();
+    const configured = cam.streamConfig || {};
 
-    const ffprobePath = process.env.FFPROBE_PATH || "/usr/bin/ffprobe";
+    if (!runtime.probe_streams) {
+        logger.info(`Skipping ffprobe for '${cam.name}' because runtime.probe_streams=false`);
+        return {
+            ...defaults,
+            ...configured
+        };
+    }
+
+    const probed = fetchStreamDetails(cam, runtime);
+    return {
+        ...defaults,
+        ...probed,
+        ...configured
+    };
+}
+
+function fetchStreamDetails(cam, runtime) {
+    const defaults = getDefaultStreamConfig();
+    const ffprobePath = runtime.probe_path;
     logger.debug('config', `Using ffprobe path: ${ffprobePath}`);
 
     logger.debug('config', `Calling ffprobe with URL: ${cam.rtspUrl}`);
@@ -154,7 +204,7 @@ function fetchStreamDetails(source, cam) {
         ],
         {
             encoding: "utf8",
-            timeout: 15000
+            timeout: runtime.probe_timeout_ms
         }
     );
 
@@ -219,6 +269,33 @@ function fetchStreamDetails(source, cam) {
     return detected;
 }
 
+function normalizeConfiguredStream(stream) {
+    if (!stream) {
+        return {};
+    }
+
+    return {
+        encoding: stream.encoding,
+        width: normalizePositiveInteger(stream.width, "stream.width"),
+        height: normalizePositiveInteger(stream.height, "stream.height"),
+        framerate: normalizePositiveInteger(stream.framerate, "stream.framerate"),
+        bitrate: normalizePositiveInteger(stream.bitrate, "stream.bitrate"),
+        quality: normalizePositiveNumber(stream.quality, "stream.quality")
+    };
+}
+
+function validateRuntimeSettings(runtime) {
+    if (typeof runtime.probe_streams !== "boolean") {
+        throw new Error("runtime.probe_streams must be true or false.");
+    }
+
+    if (typeof runtime.probe_path !== "string" || runtime.probe_path.trim() === "") {
+        throw new Error("runtime.probe_path must be a non-empty string.");
+    }
+
+    normalizePositiveInteger(runtime.probe_timeout_ms, "runtime.probe_timeout_ms");
+}
+
 function validateHostSource(src) {
     const required = ["name", "hostname", "rtsp_port", "http_port"];
     for (const key of required) {
@@ -237,6 +314,9 @@ function validateHostSource(src) {
             );
         }
     }
+
+    normalizePositiveInteger(src.rtsp_port, `host_source '${src.name}'.rtsp_port`);
+    normalizePositiveInteger(src.http_port, `host_source '${src.name}'.http_port`);
 }
 
 function validateVirtualCamera(cam) {
@@ -246,6 +326,40 @@ function validateVirtualCamera(cam) {
             throw new Error(`virtual_camera missing required field '${key}'.`);
         }
     }
+
+    if (!/^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$/.test(cam.mac)) {
+        throw new Error(`virtual_camera '${cam.name}' has invalid MAC address '${cam.mac}'.`);
+    }
+
+    if (cam.stream) {
+        normalizeConfiguredStream(cam.stream);
+    }
+}
+
+function normalizePositiveInteger(value, label) {
+    if (value === undefined || value === null) {
+        return undefined;
+    }
+
+    const parsed = Number(value);
+    if (!Number.isInteger(parsed) || parsed <= 0) {
+        throw new Error(`${label} must be a positive integer.`);
+    }
+
+    return parsed;
+}
+
+function normalizePositiveNumber(value, label) {
+    if (value === undefined || value === null) {
+        return undefined;
+    }
+
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+        throw new Error(`${label} must be a positive number.`);
+    }
+
+    return parsed;
 }
 
 module.exports = { loadConfig };

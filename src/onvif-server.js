@@ -36,7 +36,7 @@ class OnvifServer {
             `${this.camera.ip}:${sourcePort} -> ${destinationAddress}:${destinationPort}`
         );
 
-        tcpProxy.createProxy(sourcePort, destinationAddress, destinationPort, this.camera.ip);
+        TcpProxy.createProxy(sourcePort, destinationAddress, destinationPort, this.camera.ip);
         this.rtspProxyStarted = true;
     }
 

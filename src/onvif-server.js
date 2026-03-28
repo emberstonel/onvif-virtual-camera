@@ -7,6 +7,7 @@ const logger = require("./log-manager");
 const DeviceService = require("./services/device-service");
 const MediaService = require("./services/media-service");
 const DiscoveryService = require("./services/discovery-service");
+const { spawn } = require("child_process");
 
 class OnvifServer {
     constructor(camera) {
@@ -17,6 +18,50 @@ class OnvifServer {
         this.deviceService = new DeviceService(camera);
         this.mediaService = new MediaService(camera);
         this.discoveryService = new DiscoveryService(camera);
+
+        this.relayProcess = null;
+    }
+
+    startRtspRelay() {
+        // Proof-of-concept only: relay one camera locally
+        if (this.camera.name !== "VirtualCam-1A") {
+            return;
+        }
+
+        const ffmpegPath = "/usr/bin/ffmpeg";
+        const relayUrl = `rtsp://${this.camera.ip}:8554/defaultPrimary-1`;
+
+        logger.info(`Starting RTSP relay for ${this.camera.name}: ${relayUrl} -> ${this.camera.rtspUrl}`);
+
+        this.relayProcess = spawn(
+            ffmpegPath,
+            [
+                "-rtsp_transport", "tcp",
+                "-i", this.camera.rtspUrl,
+                "-map", "0:v:0",
+                "-c", "copy",
+                "-f", "rtsp",
+                "-rtsp_transport", "tcp",
+                "-rtsp_flags", "listen",
+                relayUrl
+            ],
+            {
+                stdio: ["ignore", "ignore", "pipe"]
+            }
+        );
+
+        this.relayProcess.stderr.on("data", (data) => {
+            logger.debug("relay", `ffmpeg relay stderr for ${this.camera.name}: ${data.toString().trim()}`);
+        });
+
+        this.relayProcess.on("error", (err) => {
+            logger.error(`RTSP relay failed for ${this.camera.name}: ${err.message}`);
+        });
+
+        this.relayProcess.on("exit", (code, signal) => {
+            logger.warn(`RTSP relay exited for ${this.camera.name}: code=${code}, signal=${signal}`);
+            this.relayProcess = null;
+        });
     }
 
     mergeTypesXsd(wsdlXml, xsdXml) {
@@ -226,6 +271,12 @@ class OnvifServer {
                     await this.discoveryService.start();
                 } catch (err) {
                     logger.error(`Failed to start WS-Discovery for ${this.camera.name}: ${err.message}`);
+                }
+
+                try {
+                    this.startRtspRelay();
+                } catch (err) {
+                    logger.error(`Failed to start RTSP relay for ${this.camera.name}: ${err.message}`);
                 }
 
                 resolve();

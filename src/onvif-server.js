@@ -4,64 +4,40 @@ const http = require("http");
 const soap = require("soap");
 const path = require("path");
 const logger = require("./log-manager");
+const TcpProxy = require("node-tcp-proxy");
 const DeviceService = require("./services/device-service");
 const MediaService = require("./services/media-service");
 const DiscoveryService = require("./services/discovery-service");
-const { spawn } = require("child_process");
 
 class OnvifServer {
     constructor(camera) {
         this.camera = camera;
         this.hasAuth = !!(this.camera.auth && this.camera.auth.username && this.camera.auth.password);
         this.lastSoapMethod = 'unknown'
+        this.rtspProxyStarted = false;
 
         this.deviceService = new DeviceService(camera);
         this.mediaService = new MediaService(camera);
         this.discoveryService = new DiscoveryService(camera);
-
-        this.relayProcess = null;
     }
 
-    startRtspRelay() {
-        // Proof-of-concept only: relay one camera locally
-        if (this.camera.name !== "VirtualCam-1A") {
+    startRtspProxy() {
+        // Proof-of-concept only: hardcode one proxy for one virtual camera
+        if (this.camera.name !== "VirtualCam-1A" || this.rtspProxyStarted) {
             return;
         }
 
-        const ffmpegPath = "/usr/bin/ffmpeg";
-        const relayUrl = `rtsp://${this.camera.ip}:8554/defaultPrimary-1`;
+        const sourcePort = 8554;
+        const destinationAddress = this.camera.host.hostname;
+        const destinationPort = this.camera.host.rtsp_port;
 
-        logger.info(`Starting RTSP relay for ${this.camera.name}: ${relayUrl} -> ${this.camera.rtspUrl}`);
-
-        this.relayProcess = spawn(
-            ffmpegPath,
-            [
-                "-rtsp_transport", "tcp",
-                "-i", this.camera.rtspUrl,
-                "-map", "0:v:0",
-                "-c", "copy",
-                "-f", "rtsp",
-                "-rtsp_transport", "tcp",
-                "-rtsp_flags", "listen",
-                relayUrl
-            ],
-            {
-                stdio: ["ignore", "ignore", "pipe"]
-            }
+        logger.info(
+            `Starting RTSP TCP proxy for ${this.camera.name}: ` +
+            `${this.camera.ip}:${sourcePort} -> ${destinationAddress}:${destinationPort}`
         );
 
-        this.relayProcess.stderr.on("data", (data) => {
-            logger.debug("relay", `ffmpeg relay stderr for ${this.camera.name}: ${data.toString().trim()}`);
-        });
-
-        this.relayProcess.on("error", (err) => {
-            logger.error(`RTSP relay failed for ${this.camera.name}: ${err.message}`);
-        });
-
-        this.relayProcess.on("exit", (code, signal) => {
-            logger.warn(`RTSP relay exited for ${this.camera.name}: code=${code}, signal=${signal}`);
-            this.relayProcess = null;
-        });
+        tcpProxy.createProxy(sourcePort, destinationAddress, destinationPort, this.camera.ip);
+        this.rtspProxyStarted = true;
     }
 
     mergeTypesXsd(wsdlXml, xsdXml) {
@@ -274,9 +250,9 @@ class OnvifServer {
                 }
 
                 try {
-                    this.startRtspRelay();
+                    this.startRtspProxy();
                 } catch (err) {
-                    logger.error(`Failed to start RTSP relay for ${this.camera.name}: ${err.message}`);
+                    logger.error(`Failed to start RTSP proxy for ${this.camera.name}: ${err.message}`);
                 }
 
                 resolve();

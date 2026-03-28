@@ -59,7 +59,7 @@ class MediaService {
     // ONVIF: GetStreamUri
     async GetStreamUri(args) {
         const streamUri = this.camera.name === "VirtualCam-1A"
-            ? `rtsp://${this.camera.ip}:8554/defaultPrimary-1`
+            ? `rtsp://${this.camera.ip}:8554/rtsp/defaultPrimary-1?streamType=u`
             : this.camera.rtspUrl;
 
         logger.debug(

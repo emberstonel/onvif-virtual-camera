@@ -117,7 +117,7 @@ function loadConfig(configPath) {
         };
 
         // Fetch stream config
-        const stream = fetchStreamDetails(source, camera);
+        camera.stream = fetchStreamDetails(source, camera);
 
         return camera;
     });
@@ -213,6 +213,7 @@ function fetchStreamDetails(source, cam) {
     };
 
     logger.info(`Successfully updated stream details for '${cam.name}'`);
+    logger.debug('config', `Detected stream details for '${cam.name}': ${detected.encoding}, ${detected.width}x${detected.height}, ${detected.framerate}fps, ${detected.bitrate}kbps`);
 
     return detected;
 }

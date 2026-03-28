@@ -15,12 +15,13 @@ function createCameraRuntime(cameraConfig, network) {
             deviceServiceUrl: `http://${network.ip}:${onvifPort}/onvif/device_service`,
             mediaServiceUrl: `http://${network.ip}:${onvifPort}/onvif/media_service`,
             rtspUri: `rtsp://${network.ip}:${rtspProxyPort}${cameraConfig.rtspPath}`,
-            snapshotUri: cameraConfig.snapshotUrl
+            snapshotUri: `http://${network.ip}:${onvifPort}${cameraConfig.snapshotPath}`
         },
         source: {
             hostname: cameraConfig.host.hostname,
             rtspPort: cameraConfig.host.rtsp_port,
             snapshotUrl: cameraConfig.snapshotUrl,
+            snapshotPath: cameraConfig.snapshotPath,
             rtspUrl: cameraConfig.rtspUrl
         },
         lifecycle: {
@@ -28,6 +29,7 @@ function createCameraRuntime(cameraConfig, network) {
             networkResolved: true,
             rtspProxyReady: false,
             httpReady: false,
+            snapshotReady: false,
             discoveryReady: false
         }
     };

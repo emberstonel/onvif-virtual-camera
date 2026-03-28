@@ -6,6 +6,7 @@ FROM node:20-alpine AS base
 WORKDIR /app
 COPY package*.json ./
 RUN npm install --omit=dev
+RUN apk add --no-cache ffmpeg
 COPY . .
 
 # Copy helper script + extraction wrapper into the image

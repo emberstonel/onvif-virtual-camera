@@ -97,16 +97,13 @@ function loadConfig(configPath) {
         const snapshotUrl =
             `http://${authPrefix}${source.hostname}:${source.http_port}${snapshotPath}`;
 
-        // Fetch stream config
-        const stream = fetchStreamDetails(source, cam);
-
-        return {
+        // Construct our camera object
+        const camera = {
             name: cam.name,
             model: cam.model,
             mac,
             rtspUrl,
             snapshotUrl,
-            stream,
             auth: hasAuth(source) ? {
                 username: source.auth.username,
                 password: source.auth.password
@@ -117,22 +114,102 @@ function loadConfig(configPath) {
                 http_port: source.http_port
             }
         };
+
+        // Fetch stream config
+        const stream = fetchStreamDetails(source, cam);
+
+        return camera;
     });
 
     return { runtime, cameras };
 }
 
 function fetchStreamDetails(source, cam) {
-    // Placeholder for future probing of upstream camera / RTSP stream
-    // For now, return static defaults.
-    return {
+    const { spawnSync } = require("child_process");
+
+    const defaults = {
         encoding: "H264",
         width: 1920,
         height: 1080,
-        framerate: 30,
-        bitrate: 4096,
+        framerate: 15,
+        bitrate: 2048,
         quality: 5
     };
+
+    const result = spawnSync(
+        process.env.FFPROBE_PATH || "ffprobe",
+        [
+            "-v", "error",
+            "-rtsp_transport", "tcp",
+            "-select_streams", "v:0",
+            "-show_entries", "stream=codec_name,width,height,avg_frame_rate,bit_rate",
+            "-of", "json",
+            cam.rtspUrl
+        ],
+        {
+            encoding: "utf8",
+            timeout: 15000
+        }
+    );
+
+    if (result.error) {
+        logger.warn(`ffprobe failed for '${cam.name}': ${result.error.message}; using defaults`);
+        return defaults;
+    }
+
+    if (result.status !== 0) {
+        logger.warn(
+            `ffprobe returned non-zero for '${cam.name}': ` +
+            `${(result.stderr || "").trim() || `exit ${result.status}`}; using defaults`
+        );
+        return defaults;
+    }
+
+    let parsed;
+    try {
+        parsed = JSON.parse(result.stdout);
+    } catch (err) {
+        logger.warn(`Failed to parse ffprobe output for '${cam.name}': ${err.message}; using defaults`);
+        return defaults;
+    }
+
+    const stream = parsed?.streams?.[0];
+    if (!stream) {
+        logger.warn(`ffprobe returned no video stream for '${cam.name}'; using defaults`);
+        return defaults;
+    }
+
+    const parseFrameRate = (value) => {
+        const [num, den] = String(value || "").split("/", 2).map(Number);
+        if (!Number.isFinite(num) || !Number.isFinite(den) || den === 0) {
+            return null;
+        }
+
+        const fps = num / den;
+        return Number.isFinite(fps) && fps > 0 ? Math.round(fps) : null;
+    };
+
+    const codecMap = {
+        h264: "H264",
+        hevc: "H265",
+        h265: "H265",
+        mjpeg: "MJPEG"
+    };
+
+    const detected = {
+        encoding: codecMap[String(stream.codec_name || "").toLowerCase()] || defaults.encoding,
+        width: Number.isFinite(stream.width) && stream.width > 0 ? stream.width : defaults.width,
+        height: Number.isFinite(stream.height) && stream.height > 0 ? stream.height : defaults.height,
+        framerate: parseFrameRate(stream.avg_frame_rate) || defaults.framerate,
+        bitrate: Number.isFinite(Number(stream.bit_rate)) && Number(stream.bit_rate) > 0
+            ? Math.round(Number(stream.bit_rate) / 1000)
+            : defaults.bitrate,
+        quality: defaults.quality
+    };
+
+    logger.info(`Successfully updated stream details for '${cam.name}'`);
+
+    return detected;
 }
 
 function validateHostSource(src) {

@@ -102,6 +102,14 @@ class MediaService {
                     Resolution: {
                         Width: this.camera.stream.width,
                         Height: this.camera.stream.height
+                    },
+                    Bounds: {
+                        $attributes: {
+                            x: 0,
+                            y: 0,
+                            width: this.camera.stream.width,
+                            height: this.camera.stream.height
+                        }
                     }
                 }
             ]

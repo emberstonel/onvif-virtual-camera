@@ -194,6 +194,13 @@
         </xs:sequence>
     </xs:complexType>
 
+    <xs:complexType name="Rectangle">
+        <xs:attribute name="x" type="xs:int" use="required"/>
+        <xs:attribute name="y" type="xs:int" use="required"/>
+        <xs:attribute name="width" type="xs:int" use="required"/>
+        <xs:attribute name="height" type="xs:int" use="required"/>
+    </xs:complexType>
+
     <xs:complexType name="RateControl">
         <xs:sequence>
             <xs:element name="FrameRateLimit" type="xs:int" minOccurs="0"/>
@@ -206,6 +213,7 @@
         <xs:sequence>
             <xs:element name="Framerate" type="xs:int" minOccurs="0"/>
             <xs:element name="Resolution" type="tt:Resolution" minOccurs="0"/>
+            <xs:element name="Bounds" type="tt:Rectangle" minOccurs="0"/>
         </xs:sequence>
         <xs:attribute name="token" type="tt:ReferenceToken" use="optional"/>
     </xs:complexType>

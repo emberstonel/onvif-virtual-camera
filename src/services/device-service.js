@@ -5,22 +5,6 @@ class DeviceService {
         this.camera = camera;
     }
 
-    getTimeZoneOffsetString(date) {
-        const offsetMinutes = -date.getTimezoneOffset();
-        const sign = offsetMinutes >= 0 ? "+" : "-";
-        const absoluteMinutes = Math.abs(offsetMinutes);
-        const hours = String(Math.floor(absoluteMinutes / 60)).padStart(2, "0");
-        const minutes = String(absoluteMinutes % 60).padStart(2, "0");
-
-        return `UTC${sign}${hours}:${minutes}`;
-    }
-
-    isDaylightSavingsObserved(date) {
-        const januaryOffset = new Date(date.getFullYear(), 0, 1).getTimezoneOffset();
-        const julyOffset = new Date(date.getFullYear(), 6, 1).getTimezoneOffset();
-        return date.getTimezoneOffset() < Math.max(januaryOffset, julyOffset);
-    }
-
     buildDeviceCapabilities() {
         return {
             XAddr: this.camera.endpoints.deviceServiceUrl,
@@ -82,9 +66,9 @@ class DeviceService {
         return {
             SystemDateAndTime: {
                 DateTimeType: "NTP",
-                DaylightSavings: this.isDaylightSavingsObserved(now),
+                DaylightSavings: false,
                 TimeZone: {
-                    TZ: this.getTimeZoneOffsetString(now)
+                    TZ: "UTC"
                 },
                 UTCDateTime: {
                     Time: {

@@ -122,11 +122,10 @@ class DiscoveryService {
         );
 
         const probeTypes = this.extractProbeTypes(xml);
-        if (probeTypes && !probeTypes.includes("NetworkVideoTransmitter")) {
+        if (probeTypes) {
             logger.debug("discovery",
-                `Ignoring WS-Discovery Probe for ${this.camera.name} because Types=${probeTypes}`
+                `WS-Discovery Probe Types for ${this.camera.name}: ${probeTypes}`
             );
-            return;
         }
 
         const relatesTo = this.extractMessageId(xml);
@@ -200,7 +199,6 @@ buildProbeMatchesResponse(relatesTo) {
         const match = xml.match(/<[^:>]*:?MessageID[^>]*>([^<]+)<\/[^:>]*:?MessageID>/i);
         return match ? match[1].trim() : null;
     }
-
     extractProbeTypes(xml) {
         const match = xml.match(/<[^:>]*:?Types[^>]*>([^<]+)<\/[^:>]*:?Types>/i);
         return match ? match[1].trim() : null;

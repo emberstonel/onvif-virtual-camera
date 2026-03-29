@@ -308,7 +308,7 @@ function normalizeConfiguredStream(stream) {
 
 function normalizeIdentity(cam) {
     return {
-        manufacturer: normalizeOptionalString(cam.manufacturer, "manufacturer") || "ONVIF Virtual Camera",
+        manufacturer: normalizeOptionalString(cam.manufacturer, "manufacturer") || "VirtualCam",
         model: normalizeOptionalString(cam.model, "model") || cam.name,
         firmwareVersion: normalizeOptionalString(cam.firmware_version, "firmware_version") || "1.0",
         serialNumber: normalizeOptionalString(cam.serial_number, "serial_number")

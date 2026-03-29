@@ -1,224 +1,189 @@
-# ONVIF Virtual Camera (Docker Edition)
+# ONVIF Virtual Camera
 
-This project provides a lightweight ONVIF Device + Media Service emulator designed for UniFi Protect and other ONVIF clients. It is ideal for cameras that contain multiple "heads" or expose various angles as separate cameras.
+This project creates virtual ONVIF cameras for UniFi Protect. It is intended for sources that Protect cannot adopt cleanly on their own, including cameras without useful ONVIF support and multi-head cameras that need to appear as separate devices.
 
-Each virtual camera exposes:
+Each virtual camera gets its own:
 
-- ONVIF Device Service  
-- ONVIF Media Service  
-- RTSP stream URL  
-- Snapshot URL  
+- MAC address
+- IP address
+- ONVIF Device Service
+- ONVIF Media Service
+- RTSP endpoint
+- Snapshot endpoint
 
-The container can run multiple virtual cameras, each bound to a unique MacVLAN interface with its own IP address. RTSP proxying is not required as the full RTSP paths (to the original host device) are passed in the ONVIF replies. Note that this fork is focused on **Docker deployment**.
-
----
-
-## Features
-
-- No external dependencies  
-- Multiple virtual ONVIF cameras in one container
-- Helper script to build MacVLAN interfaces based on your config
-- Fully compatible with UniFi Protect’s ONVIF discovery  
-- RTSP + snapshot URLs mapped from real host cameras  
-
----
-
-## Requirements
-
-- Docker or Docker Compose  
-- A MacVLAN interface for each virtual camera  
-- A `config.yaml` mounted into the container root as `/config.yaml`  
-
----
+The project is designed to run in Docker with host networking. Each virtual camera is bound to its own MacVLAN interface so UniFi Protect can adopt it as an individual device.
 
 ## Getting Started
 
-- Create a `config.yaml` defining your virtual cameras.
-- Run the `macvlan-init.sh` script to create the required macvlan interfaces.
-- Build the Docker image for the ONVIF proxy.
-- Run the container and mount your `config.yaml` into `/config.yaml`.
-- Add each virtual camera to UnFi Protect.
+1. Create a `config.yml` for your host sources and virtual cameras.
+2. Create the required MacVLAN interfaces on the Docker host.
+3. Start the container with host networking and mount the config as `/config.yml`.
+4. Check the container logs to confirm each virtual camera started successfully.
+5. Add the virtual camera IPs in UniFi Protect.
 
----
+## Configuration
 
-# Configuration File (`config.yaml`)
+This project uses a YAML config file, usually named `config.yml`, placed alongside your Docker deployment files. Ensure it is mounted into the container as shown in the Docker Usage section below.
 
-Paths for the virtual cameras are relative to the "hostname" entered as a host source. This file must be mounted into the container root as:
+Use [resources/config-example.yml](./resources/config-example.yml) as the starting point for your file.
 
+### Runtime Settings
+
+```yaml
+runtime:
+  enable_debug_logs: false
+  probe_streams: true
+  probe_timeout_ms: 15000
 ```
-/config.yaml
-```
 
-A complete example:
+- `enable_debug_logs`: `false`, `true`, or an array of debug categories
+- `probe_streams`: probe source streams with `ffprobe` when a camera does not define a `stream` block
+- `probe_timeout_ms`: timeout for probing
+
+### Host Sources
+
+Each host source describes the `real` camera or recorder endpoint:
 
 ```yaml
 host_sources:
-  - name: cam1
+  - name: nvr-1
     hostname: 192.168.1.50
     rtsp_port: 554
     http_port: 80
     auth:
       username: admin
-      password: password123
-
-  - name: cam2
-    hostname: 192.168.1.51
-    rtsp_port: 554
-    http_port: 80
-    auth:
-      username: admin
-      password: password123
-
-virtual_cameras:
-  - name: VirtualCam1
-    model: "VCam-1080p"
-    mac: "02:42:ac:11:00:11"
-    host_source: cam1
-    rtsp_path: "/live1"
-    snapshot_path: "/snapshot1.jpg"
-
-  - name: VirtualCam2
-    model: "VCam-1080p"
-    mac: "02:42:ac:11:00:12"
-    host_source: cam1
-    rtsp_path: "/live2"
-    snapshot_path: "/snapshot2.jpg"
-
-  - name: VirtualCam3
-    model: "VCam-1080p"
-    mac: "02:42:ac:11:00:13"
-    host_source: cam2
-    rtsp_path: "/live"
-    snapshot_path: "/snapshot.jpg"
+      password: secret
 ```
 
----
+### Virtual Cameras
 
+Each virtual camera requires:
 
-## MacVLAN Setup (Required)
+- `name`
+- `model`
+- `mac`
+- `host_source`
+- `rtsp_path`
+- `snapshot_path`
 
-Each virtual camera must appear on the network as a **unique MAC + IP**.  
-This project includes a helper script that automates creation and persistence of these interfaces which is should work on most common Linux distributions (Ubuntu, Debian, Arch, Fedora, etc.). Feel free to complete the MacVLAN setup yourself if preferred.
+Optional identity fields:
 
-The script performs:
+- `manufacturer`
+- `firmware_version`
+- `serial_number`
+- `hardware_id`
 
-- Creation of `vcam-<name>` MacVLAN interfaces  
-- Assignment of MAC addresses from `config.yaml`  
-- DHCP or static IP assignment  
-- Immediate activation of the interfaces  
-- A cleanup mode to remove all vcam interfaces and persistence files  
+Optional manual stream settings:
 
-This makes it easy to rebuild interfaces when changing MACs or when UniFi Protect gets “stuck” on a previous adoptions.
+```yaml
+stream:
+  encoding: "H264"
+  width: 1920
+  height: 1080
+  framerate: 15
+  bitrate: 2048
+  quality: 5
+```
 
-> **NOTE:** The script requires the YAML parser `yq` to be installed on the host system. This can be done via `apt install yq`
+If `stream` is present, it must be complete and probing is skipped for that camera. If `stream` is omitted, probing is used when `runtime.probe_streams` is enabled.
 
----
+## MacVLAN Setup
 
-### Running the Script
+Each virtual camera must appear on the network with a unique MAC and IP. The MacVLAN helper script is packaged inside the Docker image and must be copied out to the host before use.
 
-The script must be run **on the host**, not inside the container. It can be copied to your host system using the following (if your container name differs, adjust `onvif-server` accordingly):
+The helper script:
+
+- creates `vcam-<name>` interfaces
+- applies the configured MAC addresses
+- assigns DHCP or static IPs
+- can clean up generated interfaces and persistence files
+
+> [!CAUTION]
+> The script must be run on the host, not inside the container.
+
+> [!WARNING]
+> MacVLANs are required for this project and they must be configured to match your config.yml exactly. Using the helper script is highly recommended.
+
+### Using the helper script for setup
+
+Start or create the container first, then copy the helper script to the host (if your container name differs, adjust "onvif-server" in the command below accordingly).
 
 ```bash
-docker cp onvif-server:/resources/macvlan-init.sh ./macvlan-init.sh
+docker cp onvif-server:/usr/local/bin/macvlan-init.sh ./macvlan-init.sh
 chmod +x ./macvlan-init.sh
 ```
 
-Arguments expected by this script:
-
-- The path to your config.yaml
-- A parent interface (e.g., `eth0`, `eno1`, `enp3s0`)  
-- A mode (`dhcp` or `static`)  
-- Optional static IPs  
-
-Examples below.
-
----
-
-### DHCP Mode (Recommended)
-
-This is the simplest and most common setup.
+Example DHCP mode:
 
 ```bash
-sudo ./resources/macvlan-init.sh \
-    --config "/opt/onvif-server/config.yaml" \
+sudo ./macvlan-init.sh \
+    --config "/opt/onvif-server/config.yml" \
     --parent eth0 \
     --mode dhcp
 ```
 
-The script will:
-
-- Read all virtual cameras from your `/config.yaml`
-- Create `vcam-<name>` interfaces
-- Assign MAC addresses
-- Request DHCP leases
-- Generate persistent systemd‑networkd files
-- Restart systemd‑networkd to apply them
-
----
-
-### Static Mode
-
-If you prefer static IPs, provide them in the same order the virtual cameras appear in your config:
+Example static mode:
 
 ```bash
-sudo ./resources/macvlan-init.sh \
-    --config "/opt/onvif-server/config.yaml" \
+sudo ./macvlan-init.sh \
+    --config "/opt/onvif-server/config.yml" \
     --parent eth0 \
     --mode static \
     --ips 192.168.10.11,192.168.10.12
 ```
 
-Static mode automatically:
+## Docker Usage
 
-- Infers the subnet mask and gateway from the **parent interface**
-- Writes persistent `.network` files with `Address=` and `Gateway=`
-- No need to specify CIDR or gateway manually.
-
----
-
-# Docker Usage
-
-## Docker Compose Example
+Example Docker Compose configuration:
 
 ```yaml
 services:
   onvif-server:
     build:
       context: .
-      target: prod                        # use "dev" for troubleshooting / debugging
+      target: prod
     container_name: onvif-server
     network_mode: "host"
     restart: unless-stopped
     volumes:
-      - ./config.yaml:/config.yaml:ro
+      - ./config.yml:/config.yml:ro
 ```
 
-### Why `network_mode: host`?
+> [!NOTE]
+> `network_mode: host` is required because the container needs direct access to the host MacVLAN interfaces.
 
-Because each virtual camera binds to its own **MacVLAN interface** on the host.  
-The container must see the host’s network stack directly.
+## Running
 
----
+Start the container:
 
-# Running
-
-Build and start:
-
-```
+```bash
 docker compose up --build -d
 ```
 
 View logs:
 
-```
+```bash
 docker logs -f onvif-server
 ```
----
 
-# Adding Cameras to UniFi Protect
+On a successful startup, expect to see:
 
-1. Verify the Docker container is running without errors (review logs)
-2. Log into UniFi Protect and navigate to the "Devices" section
-3. TBD
-4. TBD
-5. TBD
+- configuration loaded
+- one initialization attempt per virtual camera
+- one short success line per virtual camera showing MAC, interface, and IP
+- a final initialization complete line
+
+If startup fails, the logs should point to the relevant stage, such as config validation, interface lookup, bind failure, or source probing.
+
+## Adding Cameras to UniFi Protect
+
+1. Open the add-third-party-camera flow in UniFi Protect.
+2. Use the virtual camera IP address, not the upstream source IP.
+3. Enter the source credentials if the camera requires authentication.
+4. Repeat for each virtual camera identity you configured.
+
+## Notes
+
+- RTSP is proxied locally so Protect receives stream URIs from the adopted device identity.
+- Snapshot requests are also served locally by the virtual camera.
+- WSDL and XSD assets are stored locally in the repository, so runtime behavior does not depend on remote ONVIF schema URLs.

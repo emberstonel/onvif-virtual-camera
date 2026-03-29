@@ -9,12 +9,6 @@ RUN npm install --omit=dev
 RUN apk add --no-cache ffmpeg
 COPY . .
 
-# Copy helper script + extraction wrapper into the image
-COPY resources/macvlan-init.sh /usr/local/bin/macvlan-init.sh
-COPY resources/copy-helper-script.sh /copy-helper-script.sh
-
-RUN chmod +x /copy-helper-script.sh
-
 # -------------------------
 # Stage 2: Development image
 # -------------------------

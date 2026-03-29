@@ -109,7 +109,7 @@ The helper script:
 Start or create the container first, then copy the helper script to the host (if your container name differs, adjust "onvif-server" in the command below accordingly).
 
 ```bash
-docker cp onvif-server:/usr/local/bin/macvlan-init.sh ./macvlan-init.sh
+docker cp onvif-server:/app/resources/macvlan-init.sh ./macvlan-init.sh
 chmod +x ./macvlan-init.sh
 ```
 

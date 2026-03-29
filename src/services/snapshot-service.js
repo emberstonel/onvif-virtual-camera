@@ -1,3 +1,4 @@
+const crypto = require("crypto");
 const http = require("http");
 const https = require("https");
 const logger = require("../log-manager");
@@ -35,15 +36,49 @@ class SnapshotService {
 
     async forwardSnapshot(res) {
         const client = this.snapshotUrl.protocol === "https:" ? https : http;
-        const headers = {
+        const baseHeaders = {
             Accept: "image/*,*/*;q=0.8"
         };
+        const credentials = this.getCredentials();
+        let upstreamRes = await this.sendSnapshotRequest(client, baseHeaders);
 
-        if (this.snapshotUrl.username || this.snapshotUrl.password) {
-            const credentials = `${decodeURIComponent(this.snapshotUrl.username)}:${decodeURIComponent(this.snapshotUrl.password)}`;
-            headers.Authorization = `Basic ${Buffer.from(credentials, "utf8").toString("base64")}`;
+        if (upstreamRes.statusCode === 401 && credentials) {
+            const digestHeader = upstreamRes.headers["www-authenticate"];
+            const digestAuth = this.buildDigestAuthorizationHeader(digestHeader, credentials);
+
+            upstreamRes.resume();
+
+            if (digestAuth) {
+                logger.debug("snapshot",
+                    `Retrying snapshot request for ${this.camera.name} with Digest auth`
+                );
+                upstreamRes = await this.sendSnapshotRequest(client, {
+                    ...baseHeaders,
+                    Authorization: digestAuth
+                });
+            }
         }
 
+        if (upstreamRes.statusCode && upstreamRes.statusCode >= 400) {
+            upstreamRes.resume();
+            throw new Error(`upstream returned HTTP ${upstreamRes.statusCode}`);
+        }
+
+        await this.pipeSnapshotResponse(upstreamRes, res);
+    }
+
+    getCredentials() {
+        if (!this.snapshotUrl.username && !this.snapshotUrl.password) {
+            return null;
+        }
+
+        return {
+            username: decodeURIComponent(this.snapshotUrl.username),
+            password: decodeURIComponent(this.snapshotUrl.password)
+        };
+    }
+
+    sendSnapshotRequest(client, headers) {
         const requestOptions = {
             protocol: this.snapshotUrl.protocol,
             hostname: this.snapshotUrl.hostname,
@@ -53,35 +88,126 @@ class SnapshotService {
             headers
         };
 
-        await new Promise((resolve, reject) => {
-            const upstreamReq = client.request(requestOptions, (upstreamRes) => {
-                if (upstreamRes.statusCode && upstreamRes.statusCode >= 400) {
-                    upstreamRes.resume();
-                    reject(new Error(`upstream returned HTTP ${upstreamRes.statusCode}`));
-                    return;
-                }
-
-                res.statusCode = upstreamRes.statusCode || 200;
-
-                const contentType = upstreamRes.headers["content-type"] || "image/jpeg";
-                res.setHeader("Content-Type", contentType);
-
-                const contentLength = upstreamRes.headers["content-length"];
-                if (contentLength) {
-                    res.setHeader("Content-Length", contentLength);
-                }
-
-                upstreamRes.on("error", reject);
-                upstreamRes.on("end", resolve);
-                upstreamRes.pipe(res);
-            });
-
+        return new Promise((resolve, reject) => {
+            const upstreamReq = client.request(requestOptions, resolve);
             upstreamReq.on("error", reject);
             upstreamReq.setTimeout(15000, () => {
                 upstreamReq.destroy(new Error("snapshot request timed out"));
             });
             upstreamReq.end();
         });
+    }
+
+    pipeSnapshotResponse(upstreamRes, res) {
+        return new Promise((resolve, reject) => {
+            res.statusCode = upstreamRes.statusCode || 200;
+
+            const contentType = upstreamRes.headers["content-type"] || "image/jpeg";
+            res.setHeader("Content-Type", contentType);
+
+            const contentLength = upstreamRes.headers["content-length"];
+            if (contentLength) {
+                res.setHeader("Content-Length", contentLength);
+            }
+
+            upstreamRes.on("error", reject);
+            upstreamRes.on("end", resolve);
+            upstreamRes.pipe(res);
+        });
+    }
+
+    buildDigestAuthorizationHeader(wwwAuthenticateHeader, credentials) {
+        const digestChallenge = this.parseDigestChallenge(wwwAuthenticateHeader);
+        if (!digestChallenge || !digestChallenge.realm || !digestChallenge.nonce) {
+            return null;
+        }
+
+        const algorithm = (digestChallenge.algorithm || "MD5").toUpperCase();
+        if (algorithm !== "MD5") {
+            logger.warn(
+                `Snapshot digest auth for ${this.camera.name} uses unsupported algorithm '${algorithm}'`
+            );
+            return null;
+        }
+
+        const uri = `${this.snapshotUrl.pathname}${this.snapshotUrl.search}`;
+        const nc = "00000001";
+        const cnonce = crypto.randomBytes(8).toString("hex");
+        const qop = this.selectDigestQop(digestChallenge.qop);
+
+        const ha1 = this.md5(
+            `${credentials.username}:${digestChallenge.realm}:${credentials.password}`
+        );
+        const ha2 = this.md5(`GET:${uri}`);
+        const response = qop
+            ? this.md5(`${ha1}:${digestChallenge.nonce}:${nc}:${cnonce}:${qop}:${ha2}`)
+            : this.md5(`${ha1}:${digestChallenge.nonce}:${ha2}`);
+
+        const parts = [
+            `Digest username="${this.escapeDigestValue(credentials.username)}"`,
+            `realm="${this.escapeDigestValue(digestChallenge.realm)}"`,
+            `nonce="${this.escapeDigestValue(digestChallenge.nonce)}"`,
+            `uri="${this.escapeDigestValue(uri)}"`,
+            `response="${response}"`,
+            `algorithm=${algorithm}`
+        ];
+
+        if (digestChallenge.opaque) {
+            parts.push(`opaque="${this.escapeDigestValue(digestChallenge.opaque)}"`);
+        }
+
+        if (qop) {
+            parts.push(`qop=${qop}`);
+            parts.push(`nc=${nc}`);
+            parts.push(`cnonce="${cnonce}"`);
+        }
+
+        return parts.join(", ");
+    }
+
+    parseDigestChallenge(headerValue) {
+        if (!headerValue || typeof headerValue !== "string") {
+            return null;
+        }
+
+        const match = headerValue.match(/^Digest\s+(.+)$/i);
+        if (!match) {
+            return null;
+        }
+
+        const challenge = {};
+        const pattern = /([a-z0-9_-]+)=(?:"([^"]*)"|([^,\s]+))/gi;
+        let pair;
+        while ((pair = pattern.exec(match[1])) !== null) {
+            challenge[pair[1].toLowerCase()] = pair[2] !== undefined ? pair[2] : pair[3];
+        }
+
+        return challenge;
+    }
+
+    selectDigestQop(qopValue) {
+        if (!qopValue) {
+            return null;
+        }
+
+        const qops = String(qopValue)
+            .split(",")
+            .map((value) => value.trim().toLowerCase())
+            .filter(Boolean);
+
+        if (qops.includes("auth")) {
+            return "auth";
+        }
+
+        return qops[0] || null;
+    }
+
+    md5(value) {
+        return crypto.createHash("md5").update(value, "utf8").digest("hex");
+    }
+
+    escapeDigestValue(value) {
+        return String(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
     }
 }
 

@@ -50,6 +50,15 @@ class DeviceService {
 
     // ONVIF: GetDeviceInformation
     async GetDeviceInformation() {
+        logger.debug("device",
+            `GetDeviceInformation response for ${this.camera.name}: ` +
+            `Manufacturer=${this.camera.identity.manufacturer}, ` +
+            `Model=${this.camera.identity.model}, ` +
+            `FirmwareVersion=${this.camera.identity.firmwareVersion}, ` +
+            `SerialNumber=${this.camera.identity.serialNumber}, ` +
+            `HardwareId=${this.camera.identity.hardwareId}`
+        );
+
         return {
             Manufacturer: this.camera.identity.manufacturer,
             Model: this.camera.identity.model,
@@ -125,6 +134,12 @@ class DeviceService {
             `GetCapabilities called for ${this.camera.name} ` +
             `(Category=${JSON.stringify(category)})`
         );
+        logger.debug("device",
+            `GetCapabilities response for ${this.camera.name}: ` +
+            `includeDevice=${includeDevice}, includeMedia=${includeMedia}, ` +
+            `deviceXAddr=${capabilities.Device && capabilities.Device.XAddr}, ` +
+            `mediaXAddr=${capabilities.Media && capabilities.Media.XAddr}`
+        );
 
         return {
             Capabilities: capabilities
@@ -160,6 +175,12 @@ class DeviceService {
         }
 
         logger.debug('device',`GetServices called for ${this.camera.name} ` + `(IncludeCapability=${includeCapability})`);
+        logger.debug("device",
+            `GetServices response for ${this.camera.name}: ` +
+            services.map((service) =>
+                `${service.Namespace} -> ${service.XAddr}`
+            ).join(", ")
+        );
 
         return {
             Service: services

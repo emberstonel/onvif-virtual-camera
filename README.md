@@ -1,6 +1,6 @@
 # ONVIF Virtual Camera
 
-This project creates virtual ONVIF cameras for UniFi Protect. It is intended for sources that Protect cannot adopt cleanly on their own, including cameras without useful ONVIF support and multi-head cameras that need to appear as separate devices.
+This project creates virtual ONVIF cameras for UniFi Protect. It is intended for sources that Protect cannot adopt cleanly on its own, including cameras without useful ONVIF support and multi-head cameras that need to appear as separate devices.
 
 Each virtual camera gets its own:
 
@@ -89,7 +89,7 @@ If `stream` is present, it must be complete and probing is skipped for that came
 
 ## MacVLAN Setup
 
-Each virtual camera must appear on the network with a unique MAC and IP. The MacVLAN helper script is packaged inside the Docker image and must be copied out to the host before use.
+Each virtual camera must appear as a separate device on the network with its own unique MAC and IP address for successful adoption by UniFi Protect (v7.0.94). A MacVLAN helper script is included in the Docker image to simplify this setup, but it must be copied to the host before use.
 
 The helper script:
 
@@ -139,11 +139,9 @@ Example Docker Compose configuration:
 ```yaml
 services:
   onvif-server:
-    build:
-      context: .
-      target: prod
+    image: ghcr.io/emberstonel/onvif-server
     container_name: onvif-server
-    network_mode: "host"
+    network_mode: host
     restart: unless-stopped
     volumes:
       - ./config.yml:/config.yml:ro

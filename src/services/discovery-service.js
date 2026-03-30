@@ -194,7 +194,7 @@ buildProbeMatchesResponse(relatesTo) {
 
     escapeScope(value) {
         if (!value) return "";
-        return String(value).replace(/[^A-Za-z0-9_\- ]/g, "_");
+        return encodeURIComponent(String(value));
     }
 
     extractMessageId(xml) {

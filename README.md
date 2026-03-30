@@ -111,8 +111,8 @@ stream:
   quality: 5
 ```
 
-- `stream`: If provided it must be complete. If omotted, probing is used when `runtime.probe_streams` is also enabled.
-- `encoding`: Video codec to report to Protect, typically H264. Supported values map cleanly to H264, H265, and MJPEG.
+- `stream`: Must be complete if provided. If omitted, probing is used (if `probe_streams` also enabled).
+- `encoding`: Video codec to use. Supported values map cleanly to H264, H265, and MJPEG.
 - `width`: Frame width in pixels.
 - `height`: Frame height in pixels.
 - `framerate`: Frames per second. Must be a positive integer.
@@ -201,8 +201,8 @@ If startup fails, the logs should point to the relevant stage, such as config va
 
 ## Adding Cameras to UniFi Protect
 
-1. Open the add-third-party-camera flow in UniFi Protect.
-2. Use the virtual camera IP address, not the upstream source IP.
+1. Open UniFi Protect and navigate to Devices.
+2. Your virtual cameras should appear for adoption in the list; click "Adopt".
 3. Enter the source credentials if the camera requires authentication.
 4. Repeat for each virtual camera identity you configured.
 

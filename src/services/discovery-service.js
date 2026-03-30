@@ -17,7 +17,9 @@ class DiscoveryService {
     }
 
     getDiscoveryScopes() {
-        const discoveryName = this.camera.identity?.model || this.camera.name;
+        const manufacturer = this.camera.identity?.manufacturer || "";
+        const model = this.camera.identity?.model || "";
+        const discoveryName = [manufacturer, model].filter(Boolean).join(" ") || this.camera.name;
         const scopes = [
             "onvif://www.onvif.org/type/video_encoder",
             `onvif://www.onvif.org/name/${this.escapeScope(discoveryName)}`,

@@ -15,7 +15,8 @@ function getDefaultRuntime() {
     return {
         enable_debug_logs: false,
         probe_streams: true,
-        probe_timeout_ms: 15000
+        probe_timeout_ms: 15000,
+        ip_monitor_interval_ms: 5000
     };
 }
 
@@ -146,6 +147,7 @@ function loadConfig(configPath) {
             name: cam.name,
             model: cam.model,
             mac,
+            ipAssignment: normalizeIpAssignment(cam.ip, `virtual_camera '${cam.name}'.ip`),
             rtspPath,
             snapshotPath,
             rtspUrl,
@@ -325,6 +327,47 @@ function validateRuntimeSettings(runtime) {
     }
 
     normalizePositiveInteger(runtime.probe_timeout_ms, "runtime.probe_timeout_ms");
+    normalizePositiveInteger(runtime.ip_monitor_interval_ms, "runtime.ip_monitor_interval_ms");
+}
+
+function normalizeIpAssignment(value, label) {
+    if (typeof value !== "string") {
+        throw new Error(`${label} must be a string.`);
+    }
+
+    const trimmed = value.trim();
+    if (trimmed === "") {
+        throw new Error(`${label} must not be empty.`);
+    }
+
+    if (trimmed.toUpperCase() === "DHCP") {
+        return {
+            mode: "dhcp",
+            value: "DHCP"
+        };
+    }
+
+    const match = trimmed.match(/^(\d{1,3}(?:\.\d{1,3}){3})\/(\d{1,2})$/);
+    if (!match) {
+        throw new Error(`${label} must be 'DHCP' or an IPv4 CIDR address.`);
+    }
+
+    const octets = match[1].split(".").map(Number);
+    if (octets.some((octet) => !Number.isInteger(octet) || octet < 0 || octet > 255)) {
+        throw new Error(`${label} must contain a valid IPv4 address.`);
+    }
+
+    const prefix = Number(match[2]);
+    if (!Number.isInteger(prefix) || prefix < 0 || prefix > 32) {
+        throw new Error(`${label} must contain a valid CIDR prefix.`);
+    }
+
+    return {
+        mode: "static",
+        value: `${octets.join(".")}/${prefix}`,
+        address: octets.join("."),
+        prefix
+    };
 }
 
 function validateHostSource(src) {
@@ -351,7 +394,7 @@ function validateHostSource(src) {
 }
 
 function validateVirtualCamera(cam) {
-    const required = ["name", "model", "mac", "host_source", "rtsp_path", "snapshot_path"];
+    const required = ["name", "model", "mac", "ip", "host_source", "rtsp_path", "snapshot_path"];
     for (const key of required) {
         if (!cam[key]) {
             throw new Error(`virtual_camera missing required field '${key}'.`);
@@ -367,6 +410,7 @@ function validateVirtualCamera(cam) {
     }
 
     normalizeIdentity(cam);
+    normalizeIpAssignment(cam.ip, `virtual_camera '${cam.name}'.ip`);
 }
 
 function normalizePositiveInteger(value, label) {

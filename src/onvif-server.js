@@ -15,6 +15,7 @@ class OnvifServer {
         this.camera = camera;
         this.hasAuth = !!(this.camera.auth && this.camera.auth.username && this.camera.auth.password);
         this.lastSoapMethod = "unknown";
+        this.httpServer = null;
 
         this.deviceService = new DeviceService(camera);
         this.mediaService = new MediaService(camera);
@@ -154,6 +155,41 @@ class OnvifServer {
         return false;
     }
 
+    async stop() {
+        try {
+            await this.discoveryService.stop();
+        } catch (err) {
+            logger.warn(`Failed to stop WS-Discovery for ${this.camera.name}: ${err.message}`);
+        }
+
+        try {
+            this.rtspProxyService.stop();
+        } catch (err) {
+            logger.warn(`Failed to stop RTSP proxy for ${this.camera.name}: ${err.message}`);
+        }
+
+        this.camera.lifecycle.httpReady = false;
+        this.camera.lifecycle.snapshotReady = false;
+
+        if (!this.httpServer) {
+            return;
+        }
+
+        await new Promise((resolve, reject) => {
+            this.httpServer.close((err) => {
+                if (err) {
+                    reject(err);
+                    return;
+                }
+
+                logger.info(`HTTP listener stopped for ${this.camera.name} on ${this.camera.ip}:${this.camera.onvifPort}`);
+                resolve();
+            });
+        });
+
+        this.httpServer = null;
+    }
+
     async start() {
         return new Promise((resolve, reject) => {
             const server = http.createServer(async (req, res) => {
@@ -169,6 +205,7 @@ class OnvifServer {
                 res.statusCode = 404;
                 res.end("Not Found");
             });
+            this.httpServer = server;
 
             server.on("clientError", (err, socket) => {
                 logger.error(`HTTP clientError for ${this.camera.name}: ${err.message}`);

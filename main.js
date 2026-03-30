@@ -7,7 +7,6 @@ const CameraManager = require("./src/camera-manager");
 async function start() {
     
     // Begin logging and error tracking
-    let startupError = false;
     const startupSummaries = [];
     logger.info("Starting ONVIF Virtual Camera Proxy...");
 
@@ -31,15 +30,11 @@ async function start() {
             startupSummaries.push(summary);
             logger.info(`${summary.name} is up at ${summary.ip} (${summary.interface}) using MAC: ${summary.mac}`);
         } catch (err) {
-            startupError = true;
             logger.error(`Failed to initialize camera ${cam.name}: ${err.message}`);
+            process.exit(1);
         }
     }
-    if (!startupError) {
-        logger.info(`Initialization complete. ${startupSummaries.length} virtual camera(s) running.`);
-    } else {
-        logger.warn(`Initialization completed with errors. ${startupSummaries.length} virtual camera(s) started successfully.`);
-    }
+    logger.info(`Initialization complete. ${startupSummaries.length} virtual camera(s) running.`);
 }
 
 start();

@@ -34,46 +34,72 @@ runtime:
   enable_debug_logs: false
   probe_streams: true
   probe_timeout_ms: 15000
+  ip_monitor_interval_ms: 5000
 ```
 
-- `enable_debug_logs`: `false`, `true`, or an array of debug categories
-- `probe_streams`: probe source streams with `ffprobe` when a camera does not define a `stream` block
-- `probe_timeout_ms`: timeout for probing
+- `enable_debug_logs`: Uses `false`, `true`, or an array of debug categories (auth, config, device, discovery, http, lifecycle, media, network, snapshot).
+- `probe_streams`: Probe source streams with `ffprobe` when a camera does not define a `stream` block.
+- `probe_timeout_ms`: Timeout for RTSP stream probing.
+- `ip_monitor_interval_ms`: Interval used to check for IP address changes due to DHCP.
 
 ### Host Sources
 
-Each host source describes the `real` camera or recorder endpoint:
+Each host source element describes the `real` camera or recorder endpoint:
 
 ```yaml
 host_sources:
-  - name: nvr-1
+  - name: cam1
     hostname: 192.168.1.50
     rtsp_port: 554
     http_port: 80
     auth:
-      username: admin
-      password: secret
+      username: "admin"
+      password: "password123"
 ```
+
+- `name`: Used for later reference and should be short while avoiding special characters/spaces.
+- `hostname`: The IP address or DNS hostname of the actual video source.
+- `rtsp_port`: Port on the host for RTSP streams.
+- `http_port`: Port on the host for HTTP requests.
+- `auth`: The username and password to be used for authentication at the host. May be omitted if not required.
 
 ### Virtual Cameras
 
-Each virtual camera requires:
+Each virtual camera element describes details and configuration for your `virtual` camera and should have these minimally required fields:
 
-- `name`
-- `model`
-- `mac`
-- `host_source`
-- `rtsp_path`
-- `snapshot_path`
+```yaml
+name: "VirtualCam1"
+manufacturer: "Acme"
+model: "VCam-1080p"
+mac: "02:42:ac:11:00:11"
+ip: "192.168.1.210/24"
+host_source: cam1
+rtsp_path: "/live1"
+snapshot_path: "/snapshot1.jpg"
+```
 
-Optional identity fields:
+- `name`: Used for internal reference and logging.
+- `manufacturer`: Used along with `model` by Protect to construct labeling for this virtual camera.
+- `model`: Used along with `manufacturer` by Protect to construct labeling for this virtual camera.
+- `mac`: A unique MAC address for network services and that Protect will use for identity.
+- `ip`: Either the string `DHCP` or an IP address (in CIDR format) to use for network services.
+- `host_source`: Pointer to the parent `host` for this virtual camera.
+- `rtsp_path`: Path to be used for the RTSP stream.
+- `snapshot_path`: Path to be used for fetching the still image snapshot.
 
-- `manufacturer`
-- `firmware_version`
-- `serial_number`
-- `hardware_id`
+With optional identity fields:
 
-Optional manual stream settings:
+```yaml
+firmware_version: "12.4V3"
+serial_number: "1234ABCD"
+hardware_id: "00012-34567"
+```
+
+- `firmware_version`: Available additional identity metadata.
+- `serial_number`: Available additional identity metadata.
+- `hardware_id`: Available additional identity metadata.
+
+And optional manual stream settings:
 
 ```yaml
 stream:
@@ -85,7 +111,14 @@ stream:
   quality: 5
 ```
 
-If `stream` is present, it must be complete and probing is skipped for that camera. If `stream` is omitted, probing is used when `runtime.probe_streams` is enabled.
+- `stream`: If provided it must be complete. If omotted, probing is used when `runtime.probe_streams` is also enabled.
+- `encoding`: Video codec to report to Protect, typically H264. Supported values map cleanly to H264, H265, and MJPEG.
+- `width`: Frame width in pixels.
+- `height`: Frame height in pixels.
+- `framerate`: Frames per second. Must be a positive integer.
+- `bitrate`: Target bitrate in kbps. Must be a positive integer.
+- `quality`: Encoder quality value. Must be a positive number.
+
 
 ## MacVLAN Setup
 
@@ -93,9 +126,9 @@ Each virtual camera must appear as a separate device on the network with its own
 
 The helper script:
 
-- creates `vcam-<name>` interfaces
+- creates `vcam-<index>` interfaces
 - applies the configured MAC addresses
-- assigns DHCP or static IPs
+- assigns DHCP or static IPs based on your config file
 - can clean up generated interfaces and persistence files
 
 > [!CAUTION]
@@ -113,23 +146,16 @@ docker cp onvif-server:/app/resources/macvlan-init.sh ./macvlan-init.sh
 chmod +x ./macvlan-init.sh
 ```
 
-Example DHCP mode:
+Example run mode:
 
 ```bash
-sudo ./macvlan-init.sh \
-    --config "/opt/onvif-server/config.yml" \
-    --parent eth0 \
-    --mode dhcp
+sudo ./macvlan-init.sh --config "/opt/onvif-server/config.yml" --parent eth0
 ```
 
-Example static mode:
+Example cleanup mode:
 
 ```bash
-sudo ./macvlan-init.sh \
-    --config "/opt/onvif-server/config.yml" \
-    --parent eth0 \
-    --mode static \
-    --ips 192.168.10.11,192.168.10.12
+sudo ./macvlan-init.sh --cleanup
 ```
 
 ## Docker Usage

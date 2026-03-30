@@ -194,8 +194,7 @@ buildProbeMatchesResponse(relatesTo) {
 
     escapeScope(value) {
         if (!value) return "";
-        // Replace spaces and unsafe chars with underscores
-        return String(value).replace(/[^A-Za-z0-9_\-]/g, "_");
+        return String(value).replace(/[^A-Za-z0-9_\- ]/g, "_");
     }
 
     extractMessageId(xml) {

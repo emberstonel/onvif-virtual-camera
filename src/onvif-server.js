@@ -19,9 +19,15 @@ class OnvifServer {
 
         this.deviceService = new DeviceService(camera);
         this.mediaService = new MediaService(camera);
-        this.discoveryService = new DiscoveryService(camera);
-        this.rtspProxyService = new RtspProxyService(camera);
+        this.discoveryService = new DiscoveryService(camera, (err) => this.failFatal(err));
+        this.rtspProxyService = new RtspProxyService(camera, (err) => this.failFatal(err));
         this.snapshotService = new SnapshotService(camera);
+    }
+
+    failFatal(err) {
+        process.nextTick(() => {
+            throw err;
+        });
     }
 
     logLifecycleState() {
@@ -300,6 +306,10 @@ class OnvifServer {
 
             server.on("error", (err) => {
                 logger.error(`ONVIF server error for ${this.camera.name}: ${err.message}`);
+                if (this.camera.lifecycle.httpReady) {
+                    this.failFatal(err);
+                    return;
+                }
                 reject(err);
             });
         });

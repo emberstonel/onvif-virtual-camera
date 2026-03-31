@@ -127,6 +127,9 @@ class CameraManager {
             logger.info(`Camera ${this.camera.name} rebound to ${this.camera.interface} with IP ${this.camera.ip}`);
         } catch (err) {
             logger.error(`Failed to refresh camera ${this.cameraConfig.name} after network change: ${err.message}`);
+            process.nextTick(() => {
+                throw err;
+            });
         } finally {
             this.restarting = false;
         }
@@ -159,6 +162,9 @@ class CameraManager {
                 }
             } catch (err) {
                 logger.error(`Failed to refresh network state for ${this.cameraConfig.name}: ${err.message}`);
+                process.nextTick(() => {
+                    throw err;
+                });
             }
         }, intervalMs);
 

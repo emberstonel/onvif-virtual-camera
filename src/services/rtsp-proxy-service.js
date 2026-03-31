@@ -2,8 +2,9 @@ const TcpProxy = require("node-tcp-proxy");
 const logger = require("../log-manager");
 
 class RtspProxyService {
-    constructor(camera) {
+    constructor(camera, onFatalError) {
         this.camera = camera;
+        this.onFatalError = onFatalError;
         this.proxy = null;
     }
 
@@ -28,6 +29,10 @@ class RtspProxyService {
                 quiet: true
             }
         );
+
+        this.proxy.server?.on("error", (err) => {
+            this.onFatalError?.(err);
+        });
 
         this.camera.lifecycle.rtspProxyReady = true;
     }

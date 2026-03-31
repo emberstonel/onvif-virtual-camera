@@ -6,8 +6,9 @@ const MULTICAST_ADDRESS = "239.255.255.250";
 const DISCOVERY_PORT = 3702;
 
 class DiscoveryService {
-    constructor(camera) {
+    constructor(camera, onFatalError) {
         this.camera = camera;
+        this.onFatalError = onFatalError;
         this.socket = null;
         this.responseSocket = null;
         this.running = false;
@@ -96,14 +97,18 @@ class DiscoveryService {
                 logger.error(`WS-Discovery socket error for ${this.camera.name} (${this.camera.ip}): ${err.message}`);
                 if (!this.running) {
                     rejectStartup(err);
+                    return;
                 }
+                this.onFatalError?.(err);
             });
 
             this.responseSocket.on("error", (err) => {
                 logger.error(`WS-Discovery response socket error for ${this.camera.name} (${this.camera.ip}): ${err.message}`);
                 if (!this.running) {
                     rejectStartup(err);
+                    return;
                 }
+                this.onFatalError?.(err);
             });
 
             this.socket.on("message", (msg, rinfo) => {

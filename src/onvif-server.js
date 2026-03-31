@@ -236,63 +236,66 @@ class OnvifServer {
             };
 
             server.listen(this.camera.onvifPort, this.camera.ip, async () => {
-                logger.info(`HTTP listener ready for ${this.camera.name} on ${this.camera.ip}:${this.camera.onvifPort}`);
-                this.camera.lifecycle.httpReady = true;
-                this.camera.lifecycle.snapshotReady = true;
-
-                const deviceSoapServer = soap.listen(server, {
-                    path: "/onvif/device_service",
-                    services: deviceServiceDef,
-                    xml: deviceWsdlXml,
-                    forceSoap12Headers: true,
-                    attributesKey: '$attributes',
-                    wsdl_options: {
-                        attributesKey: '$attributes'
-                    }
-                });
-                const mediaSoapServer = soap.listen(server, {
-                    path: "/onvif/media_service",
-                    services: mediaServiceDef,
-                    xml: mediaWsdlXml,
-                    forceSoap12Headers: true,
-                    attributesKey: '$attributes',
-                    wsdl_options: {
-                        attributesKey: '$attributes'
-                    }
-                });
-
-                deviceSoapServer.authenticate = (security) => this.authenticateRequest(security);
-                mediaSoapServer.authenticate = (security) => this.authenticateRequest(security);
-
-                deviceSoapServer.on("request", (xml, methodName) => {
-                    this.lastSoapMethod = methodName;
-                    logger.debug('device', `SOAP Device request received for ${this.camera.name}: ${methodName}`);
-                });
-                deviceSoapServer.on("error", (err) => {
-                    logger.error(`SOAP Device error for ${this.camera.name}: ${err.message}`);
-                });
-                mediaSoapServer.on("request", (xml, methodName) => {
-                    this.lastSoapMethod = methodName;
-                    logger.debug('media', `SOAP Media request received for ${this.camera.name}: ${methodName}`);
-                });
-                mediaSoapServer.on("error", (err) => {
-                    logger.error(`SOAP Media error for ${this.camera.name}: ${err.message}`);
-                });
-
                 try {
+                    logger.info(`HTTP listener ready for ${this.camera.name} on ${this.camera.ip}:${this.camera.onvifPort}`);
+                    this.camera.lifecycle.httpReady = true;
+                    this.camera.lifecycle.snapshotReady = true;
+
+                    const deviceSoapServer = soap.listen(server, {
+                        path: "/onvif/device_service",
+                        services: deviceServiceDef,
+                        xml: deviceWsdlXml,
+                        forceSoap12Headers: true,
+                        attributesKey: '$attributes',
+                        wsdl_options: {
+                            attributesKey: '$attributes'
+                        }
+                    });
+                    const mediaSoapServer = soap.listen(server, {
+                        path: "/onvif/media_service",
+                        services: mediaServiceDef,
+                        xml: mediaWsdlXml,
+                        forceSoap12Headers: true,
+                        attributesKey: '$attributes',
+                        wsdl_options: {
+                            attributesKey: '$attributes'
+                        }
+                    });
+
+                    deviceSoapServer.authenticate = (security) => this.authenticateRequest(security);
+                    mediaSoapServer.authenticate = (security) => this.authenticateRequest(security);
+
+                    deviceSoapServer.on("request", (xml, methodName) => {
+                        this.lastSoapMethod = methodName;
+                        logger.debug('device', `SOAP Device request received for ${this.camera.name}: ${methodName}`);
+                    });
+                    deviceSoapServer.on("error", (err) => {
+                        logger.error(`SOAP Device error for ${this.camera.name}: ${err.message}`);
+                    });
+                    mediaSoapServer.on("request", (xml, methodName) => {
+                        this.lastSoapMethod = methodName;
+                        logger.debug('media', `SOAP Media request received for ${this.camera.name}: ${methodName}`);
+                    });
+                    mediaSoapServer.on("error", (err) => {
+                        logger.error(`SOAP Media error for ${this.camera.name}: ${err.message}`);
+                    });
+
                     await this.discoveryService.start();
-                } catch (err) {
-                    logger.error(`Failed to start WS-Discovery for ${this.camera.name}: ${err.message}`);
-                }
-
-                try {
                     this.rtspProxyService.start();
-                } catch (err) {
-                    logger.error(`Failed to start RTSP proxy for ${this.camera.name}: ${err.message}`);
-                }
 
-                this.logLifecycleState();
-                resolve();
+                    this.logLifecycleState();
+                    resolve();
+                } catch (err) {
+                    logger.error(`Failed to fully start camera ${this.camera.name}: ${err.message}`);
+
+                    try {
+                        await this.stop();
+                    } catch (stopErr) {
+                        logger.warn(`Failed to clean up partially started camera ${this.camera.name}: ${stopErr.message}`);
+                    }
+
+                    reject(err);
+                }
             });
 
             server.on("error", (err) => {

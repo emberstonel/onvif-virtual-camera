@@ -181,7 +181,7 @@ services:
 Start the container:
 
 ```bash
-docker compose up --build -d
+docker compose up -d
 ```
 
 View logs:

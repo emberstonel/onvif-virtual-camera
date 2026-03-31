@@ -9,9 +9,9 @@ class DiscoveryService {
     constructor(camera) {
         this.camera = camera;
         this.socket = null;
+        this.responseSocket = null;
         this.running = false;
 
-        // Deterministic UUID based on MAC + IP
         this.endpointAddress = this.buildEndpointAddress();
         this.xaddr = this.buildXAddr();
     }
@@ -53,42 +53,88 @@ class DiscoveryService {
                 return resolve();
             }
 
+            let settled = false;
+            const rejectStartup = (err) => {
+                if (settled) {
+                    return;
+                }
+
+                settled = true;
+
+                try {
+                    this.socket?.close();
+                } catch (_) {
+                    // Ignore cleanup errors during failed startup.
+                }
+
+                try {
+                    this.responseSocket?.close();
+                } catch (_) {
+                    // Ignore cleanup errors during failed startup.
+                }
+
+                this.socket = null;
+                this.responseSocket = null;
+                this.running = false;
+                this.camera.lifecycle.discoveryReady = false;
+                reject(err);
+            };
+
+            const resolveStartup = () => {
+                if (settled) {
+                    return;
+                }
+
+                settled = true;
+                resolve();
+            };
+
             this.socket = dgram.createSocket({ type: "udp4", reuseAddr: true });
+            this.responseSocket = dgram.createSocket({ type: "udp4", reuseAddr: false });
 
             this.socket.on("error", (err) => {
-                logger.error(
-                    `WS-Discovery socket error for ${this.camera.name} (${this.camera.ip}): ${err.message}`
-                );
+                logger.error(`WS-Discovery socket error for ${this.camera.name} (${this.camera.ip}): ${err.message}`);
+                if (!this.running) {
+                    rejectStartup(err);
+                }
+            });
+
+            this.responseSocket.on("error", (err) => {
+                logger.error(`WS-Discovery response socket error for ${this.camera.name} (${this.camera.ip}): ${err.message}`);
+                if (!this.running) {
+                    rejectStartup(err);
+                }
             });
 
             this.socket.on("message", (msg, rinfo) => {
                 try {
                     this.handleMessage(msg, rinfo);
                 } catch (err) {
-                    logger.error(
-                        `WS-Discovery message handling error for ${this.camera.name} (${this.camera.ip}): ${err.message}`
-                    );
+                    logger.error(`WS-Discovery message handling error for ${this.camera.name} (${this.camera.ip}): ${err.message}`);
                 }
             });
 
-            this.socket.bind(DISCOVERY_PORT, "0.0.0.0", () => {
-                try {
-                    this.socket.addMembership(MULTICAST_ADDRESS, this.camera.ip);
-                    this.socket.setMulticastInterface(this.camera.ip);
-                } catch (err) {
-                    logger.error(
-                        `Failed to join multicast group on ${this.camera.ip} for ${this.camera.name}: ${err.message}`
+            this.responseSocket.bind(0, this.camera.ip, () => {
+                this.socket.bind(DISCOVERY_PORT, "0.0.0.0", () => {
+                    try {
+                        this.socket.addMembership(MULTICAST_ADDRESS, this.camera.ip);
+                        this.socket.setMulticastInterface(this.camera.ip);
+                    } catch (err) {
+                        logger.error(`Failed to join multicast group on ${this.camera.ip} for ${this.camera.name}: ${err.message}`);
+                        rejectStartup(err);
+                        return;
+                    }
+
+                    this.running = true;
+                    this.camera.lifecycle.discoveryReady = true;
+
+                    logger.debug('discovery',
+                        `WS-Discovery listening for ${this.camera.name} on 0.0.0.0:${DISCOVERY_PORT} ` +
+                        `(reply source ${this.camera.ip}, XAddr: ${this.xaddr})`
                     );
-                }
 
-                this.running = true;
-                this.camera.lifecycle.discoveryReady = true;
-
-                logger.info(
-                    `WS-Discovery listening for ${this.camera.name} on ${this.camera.ip}:${DISCOVERY_PORT} (XAddr: ${this.xaddr})`
-                );
-
-                resolve();
+                    resolveStartup();
+                });
             });
         });
     }
@@ -99,14 +145,24 @@ class DiscoveryService {
                 return resolve();
             }
 
-            this.socket.close(() => {
-                logger.info(
-                    `WS-Discovery stopped for ${this.camera.name} on ${this.camera.ip}`
-                );
+            const finalizeStop = () => {
+                logger.info(`WS-Discovery stopped for ${this.camera.name} on ${this.camera.ip}`);
                 this.running = false;
                 this.camera.lifecycle.discoveryReady = false;
                 this.socket = null;
+                this.responseSocket = null;
                 resolve();
+            };
+
+            this.socket.close(() => {
+                if (!this.responseSocket) {
+                    finalizeStop();
+                    return;
+                }
+
+                this.responseSocket.close(() => {
+                    finalizeStop();
+                });
             });
         });
     }
@@ -135,7 +191,8 @@ class DiscoveryService {
         const responseXml = this.buildProbeMatchesResponse(relatesTo);
 
         const buf = Buffer.from(responseXml, "utf8");
-        this.socket.send(buf, 0, buf.length, rinfo.port, rinfo.address, (err) => {
+        const responseSocket = this.responseSocket || this.socket;
+        responseSocket.send(buf, 0, buf.length, rinfo.port, rinfo.address, (err) => {
             if (err) {
                 logger.error(
                     `Failed to send ProbeMatches for ${this.camera.name} to ${rinfo.address}:${rinfo.port} - ${err.message}`

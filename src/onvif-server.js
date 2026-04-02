@@ -6,20 +6,19 @@ const path = require("path");
 const logger = require("./log-manager");
 const DeviceService = require("./services/device-service");
 const MediaService = require("./services/media-service");
-const DiscoveryService = require("./services/discovery-service");
 const RtspProxyService = require("./services/rtsp-proxy-service");
 const SnapshotService = require("./services/snapshot-service");
 
 class OnvifServer {
-    constructor(camera) {
+    constructor(camera, discoveryManager) {
         this.camera = camera;
         this.hasAuth = !!(this.camera.auth && this.camera.auth.username && this.camera.auth.password);
         this.lastSoapMethod = "unknown";
         this.httpServer = null;
 
+        this.discoveryManager = discoveryManager;
         this.deviceService = new DeviceService(camera);
         this.mediaService = new MediaService(camera);
-        this.discoveryService = new DiscoveryService(camera, (err) => this.failFatal(err));
         this.rtspProxyService = new RtspProxyService(camera, (err) => this.failFatal(err));
         this.snapshotService = new SnapshotService(camera);
     }
@@ -163,7 +162,7 @@ class OnvifServer {
 
     async stop() {
         try {
-            await this.discoveryService.stop();
+            await this.discoveryManager.stopCamera(this.camera);
         } catch (err) {
             logger.warn(`Failed to stop WS-Discovery for ${this.camera.name}: ${err.message}`);
         }
@@ -286,7 +285,7 @@ class OnvifServer {
                         logger.error(`SOAP Media error for ${this.camera.name}: ${err.message}`);
                     });
 
-                    await this.discoveryService.start();
+                    await this.discoveryManager.startCamera(this.camera, (err) => this.failFatal(err));
                     this.rtspProxyService.start();
 
                     this.logLifecycleState();

@@ -6,8 +6,9 @@ const DEFAULT_ONVIF_PORT = 80;
 const DEFAULT_RTSP_PROXY_PORT = 8554;
 
 class CameraManager {
-    constructor(cameraConfig) {
+    constructor(cameraConfig, discoveryManager) {
         this.cameraConfig = cameraConfig;
+        this.discoveryManager = discoveryManager;
         this.camera = null;
         this.server = null;
         this.monitorTimer = null;
@@ -121,7 +122,7 @@ class CameraManager {
             }
 
             this.camera = this.createCameraRuntime(network);
-            this.server = new OnvifServer(this.camera);
+            this.server = new OnvifServer(this.camera, this.discoveryManager);
             await this.server.start();
 
             logger.info(`Camera ${this.camera.name} rebound to ${this.camera.interface} with IP ${this.camera.ip}`);
@@ -181,7 +182,7 @@ class CameraManager {
         const camera = this.resolveRuntime();
         logger.info(`Attempting to bind camera ${camera.name} to ${camera.interface} with IP ${camera.ip}...`);
 
-        this.server = new OnvifServer(camera);
+        this.server = new OnvifServer(camera, this.discoveryManager);
         await this.server.start();
         this.startMonitoring();
 

@@ -3,6 +3,7 @@ const path = require("path");
 const logger = require("./src/log-manager");
 const configLoader = require("./src/config-loader");
 const CameraManager = require("./src/camera-manager");
+const DiscoveryManager = require("./src/discovery-manager");
 
 async function start() {
     
@@ -14,6 +15,7 @@ async function start() {
     const configPath = fs.existsSync(path.resolve("./config.yml")) ? path.resolve("./config.yml") : "/config.yml";
 
     let config;
+    const discoveryManager = new DiscoveryManager();
     try {
         config = configLoader.loadConfig(configPath);
         logger.info(`Loaded configuration for ${config.cameras.length} virtual cameras`);
@@ -25,7 +27,7 @@ async function start() {
     // Start one ONVIF server per virtual camera
     for (const cam of config.cameras) {
         try {
-            const manager = new CameraManager(cam);
+            const manager = new CameraManager(cam, discoveryManager);
             const summary = await manager.start();
             startupSummaries.push(summary);
             logger.info(`${summary.name} is up at ${summary.ip} (${summary.interface}) using MAC: ${summary.mac}`);

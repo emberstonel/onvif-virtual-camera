@@ -101,6 +101,16 @@ echo "[INFO] Generating runtime script: $RUNTIME_SCRIPT"
     echo ""
     echo "PARENT_IFACE=\"$PARENT_IFACE\""
     echo ""
+    echo "get_iface_mac() {"
+    echo "    local iface=\"\$1\""
+    echo "    cat \"/sys/class/net/\$iface/address\" 2>/dev/null | tr '[:upper:]' '[:lower:]'"
+    echo "}"
+    echo ""
+    echo "iface_has_ipv4() {"
+    echo "    local iface=\"\$1\""
+    echo "    ip -4 -o addr show dev \"\$iface\" scope global | grep -q 'inet '"
+    echo "}"
+    echo ""
 
     for i in "${!NAMES[@]}"; do
         NAME="$((i+1))"
@@ -109,24 +119,45 @@ echo "[INFO] Generating runtime script: $RUNTIME_SCRIPT"
         IFACE="vcam-${NAME}"
 
         echo "# --- $IFACE ---"
-        echo "ip link delete \"$IFACE\" 2>/dev/null || true"
-        echo "ip link add \"$IFACE\" link \"\$PARENT_IFACE\" type macvlan mode bridge"
-        echo "ip link set \"$IFACE\" address \"$MAC\""
+        echo "DESIRED_MAC=\"${MAC,,}\""
+        echo "if ip link show \"$IFACE\" >/dev/null 2>&1; then"
+        echo "    CURRENT_MAC=\"\$(get_iface_mac \"$IFACE\")\""
+        echo "    if [[ \"\$CURRENT_MAC\" != \"\$DESIRED_MAC\" ]]; then"
+        echo "        echo \"[INFO] Recreating $IFACE to correct MAC (\$CURRENT_MAC -> \$DESIRED_MAC)\""
+        echo "        ip link delete \"$IFACE\""
+        echo "    else"
+        echo "        echo \"[INFO] Reusing existing interface $IFACE with MAC \$CURRENT_MAC\""
+        echo "    fi"
+        echo "fi"
+        echo "if ! ip link show \"$IFACE\" >/dev/null 2>&1; then"
+        echo "    ip link add \"$IFACE\" link \"\$PARENT_IFACE\" type macvlan mode bridge"
+        echo "    ip link set \"$IFACE\" address \"\$DESIRED_MAC\""
+        echo "fi"
         echo "ip link set \"$IFACE\" up"
 
         if [[ "${IP_ASSIGNMENT^^}" == "DHCP" ]]; then
-            echo "sleep 1.5"
+            echo "if iface_has_ipv4 \"$IFACE\"; then"
+            echo "    echo \"[INFO] Preserving existing DHCP address on $IFACE\""
+            echo "else"
+            echo "    sleep 1.5"
             if command -v dhcpcd >/dev/null 2>&1; then
-                echo "dhcpcd -4 -I -G -C --config /dev/null \"$IFACE\""
+                echo "    dhcpcd -4 -I -G -C --config /dev/null \"$IFACE\""
             elif command -v dhclient >/dev/null 2>&1; then
-                echo "dhclient -4 -v -cf /dev/null \"$IFACE\""
+                echo "    dhclient -4 -1 -v \"$IFACE\""
             elif command -v udhcpc >/dev/null 2>&1; then
-                echo "udhcpc -i \"$IFACE\" -n -q"
+                echo "    udhcpc -i \"$IFACE\" -n -q"
             else
                 DHCP_FAIL=true
             fi
+            echo "fi"
         else
-            echo "ip addr add \"$IP_ASSIGNMENT\" dev \"$IFACE\" || true"
+            echo "CURRENT_IP=\"\$(ip -4 -o addr show dev \"$IFACE\" scope global | awk '{print \$4}' | head -n 1)\""
+            echo "if [[ \"\$CURRENT_IP\" == \"$IP_ASSIGNMENT\" ]]; then"
+            echo "    echo \"[INFO] Preserving existing static address $IP_ASSIGNMENT on $IFACE\""
+            echo "else"
+            echo "    ip -4 addr flush dev \"$IFACE\" scope global 2>/dev/null || true"
+            echo "    ip addr add \"$IP_ASSIGNMENT\" dev \"$IFACE\""
+            echo "fi"
         fi
 
         echo ""

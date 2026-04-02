@@ -39,9 +39,6 @@ cleanup() {
     echo "[INFO] Cleanup complete."
 }
 
-echo "[INFO] Starting macvlan-init helper..."
-echo "[INFO] Validating configurations."
-
 # Validate yq is available
 if ! command -v yq >/dev/null 2>&1; then
     echo "Error: 'yq' is required but not installed."
@@ -58,17 +55,23 @@ while [[ $# -gt 0 ]]; do
         *) echo "Unknown argument: $1"; usage ;;
     esac
 done
+echo "[INFO] Starting macvlan-init helper..."
 if $CLEANUP_ONLY; then
     cleanup
     exit 0
 fi
+
+if [[ -z "$CONFIG_PATH" || -z "$PARENT_IFACE" ]]; then
+    echo "Error: Invalid arguments provided."
+    usage
+fi
+
+echo "[INFO] Validating configurations."
 echo "[INFO] Processing config file '$CONFIG_PATH' using $PARENT_IFACE."
 
 # Argument validation
-[[ -z "$CONFIG_PATH" ]] && { echo "Error: --config <path> is required"; usage; }
 [[ ! -f "$CONFIG_PATH" ]] && { echo "Error: config file not found: $CONFIG_PATH"; exit 1; }
 
-[[ -z "$PARENT_IFACE" ]] && { echo "Error: --parent is required"; usage; }
 if ! ip link show "$PARENT_IFACE" &>/dev/null; then
     echo "Error: parent interface not found: $PARENT_IFACE"
     exit 1

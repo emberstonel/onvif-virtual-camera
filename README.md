@@ -142,14 +142,14 @@ The helper script:
 Start or create the container first, then copy the helper script to the host (if your container name differs, adjust "onvif-server" in the command below accordingly).
 
 ```bash
-docker cp onvif-server:/app/resources/macvlan-init.sh ./macvlan-init.sh
-chmod +x ./macvlan-init.sh
+sudo docker cp onvif-server:/app/resources/macvlan-init.sh ./macvlan-init.sh
+sudo chmod +x ./macvlan-init.sh
 ```
 
 Example run mode:
 
 ```bash
-sudo ./macvlan-init.sh --config "/opt/onvif-server/config.yml" --parent eth0
+sudo ./macvlan-init.sh --config "./config.yml" --parent eth0
 ```
 
 Example cleanup mode:
@@ -181,13 +181,13 @@ services:
 Start the container:
 
 ```bash
-docker compose up -d
+sudo docker compose up -d
 ```
 
 View logs:
 
 ```bash
-docker logs -f onvif-server
+sudo docker logs -f onvif-server
 ```
 
 On a successful startup, expect to see:

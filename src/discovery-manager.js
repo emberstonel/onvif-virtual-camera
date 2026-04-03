@@ -1,15 +1,15 @@
-const crypto = require("crypto");
 const dgram = require("dgram");
 const logger = require("./log-manager");
 
 const MULTICAST_ADDRESS = "239.255.255.250";
 const DISCOVERY_PORT = 3702;
-const DEDUPE_TTL_MS = 1000;
+const MAX_REPLY_JITTER_MS = 75;
 
 class DiscoveryManager {
     constructor() {
         this.entries = new Map();
-        this.recentProbes = new Map();
+        this.listenSocket = null;
+        this.listeningReadyPromise = null;
     }
 
     async startCamera(camera, onFatalError) {
@@ -43,7 +43,6 @@ class DiscoveryManager {
         return {
             camera,
             onFatalError,
-            socket: null,
             responseSocket: null,
             running: false,
             endpointAddress: this.buildEndpointAddress(camera),
@@ -62,18 +61,17 @@ class DiscoveryManager {
                 settled = true;
 
                 try {
-                    entry.socket?.close();
-                } catch (_) {
-                    // Ignore cleanup errors during failed startup.
-                }
-
-                try {
                     entry.responseSocket?.close();
                 } catch (_) {
                     // Ignore cleanup errors during failed startup.
                 }
 
-                entry.socket = null;
+                try {
+                    this.listenSocket?.dropMembership(MULTICAST_ADDRESS, entry.camera.ip);
+                } catch (_) {
+                    // Ignore cleanup errors during failed startup.
+                }
+
                 entry.responseSocket = null;
                 entry.running = false;
                 entry.camera.lifecycle.discoveryReady = false;
@@ -89,17 +87,7 @@ class DiscoveryManager {
                 resolve();
             };
 
-            entry.socket = dgram.createSocket({ type: "udp4", reuseAddr: true });
             entry.responseSocket = dgram.createSocket({ type: "udp4", reuseAddr: false });
-
-            entry.socket.on("error", (err) => {
-                logger.error(`WS-Discovery socket error for ${entry.camera.name} (${entry.camera.ip}): ${err.message}`);
-                if (!entry.running) {
-                    rejectStartup(err);
-                    return;
-                }
-                entry.onFatalError?.(err);
-            });
 
             entry.responseSocket.on("error", (err) => {
                 logger.error(`WS-Discovery response socket error for ${entry.camera.name} (${entry.camera.ip}): ${err.message}`);
@@ -110,42 +98,32 @@ class DiscoveryManager {
                 entry.onFatalError?.(err);
             });
 
-            entry.socket.on("message", (msg, rinfo) => {
+            entry.responseSocket.bind(0, entry.camera.ip, async () => {
                 try {
-                    this.handleMessage(entry, msg, rinfo);
+                    await this.ensureListeningSocket();
+                    this.listenSocket.addMembership(MULTICAST_ADDRESS, entry.camera.ip);
                 } catch (err) {
-                    logger.error(`WS-Discovery message handling error for ${entry.camera.name} (${entry.camera.ip}): ${err.message}`);
+                    logger.error(`Failed to join multicast group on ${entry.camera.ip} for ${entry.camera.name}: ${err.message}`);
+                    rejectStartup(err);
+                    return;
                 }
-            });
 
-            entry.responseSocket.bind(0, entry.camera.ip, () => {
-                entry.socket.bind(DISCOVERY_PORT, "0.0.0.0", () => {
-                    try {
-                        entry.socket.addMembership(MULTICAST_ADDRESS, entry.camera.ip);
-                        entry.socket.setMulticastInterface(entry.camera.ip);
-                    } catch (err) {
-                        logger.error(`Failed to join multicast group on ${entry.camera.ip} for ${entry.camera.name}: ${err.message}`);
-                        rejectStartup(err);
-                        return;
-                    }
+                entry.running = true;
+                entry.camera.lifecycle.discoveryReady = true;
 
-                    entry.running = true;
-                    entry.camera.lifecycle.discoveryReady = true;
+                logger.debug("discovery",
+                    `WS-Discovery registered for ${entry.camera.name} on 0.0.0.0:${DISCOVERY_PORT} ` +
+                    `(reply source ${entry.camera.ip}, XAddr: ${entry.xaddr})`
+                );
 
-                    logger.debug("discovery",
-                        `WS-Discovery listening for ${entry.camera.name} on 0.0.0.0:${DISCOVERY_PORT} ` +
-                        `(reply source ${entry.camera.ip}, XAddr: ${entry.xaddr})`
-                    );
-
-                    resolveStartup();
-                });
+                resolveStartup();
             });
         });
     }
 
     closeEntry(entry) {
         return new Promise((resolve) => {
-            if (!entry.running || !entry.socket) {
+            if (!entry.running) {
                 entry.camera.lifecycle.discoveryReady = false;
                 resolve();
                 return;
@@ -155,57 +133,138 @@ class DiscoveryManager {
                 logger.info(`WS-Discovery stopped for ${entry.camera.name} on ${entry.camera.ip}`);
                 entry.running = false;
                 entry.camera.lifecycle.discoveryReady = false;
-                entry.socket = null;
                 entry.responseSocket = null;
                 resolve();
             };
 
-            entry.socket.close(() => {
-                if (!entry.responseSocket) {
-                    finalizeStop();
-                    return;
-                }
+            try {
+                this.listenSocket?.dropMembership(MULTICAST_ADDRESS, entry.camera.ip);
+            } catch (err) {
+                logger.warn(`Failed to leave multicast group on ${entry.camera.ip} for ${entry.camera.name}: ${err.message}`);
+            }
 
-                entry.responseSocket.close(() => {
-                    finalizeStop();
-                });
+            if (!entry.responseSocket) {
+                this.closeListeningSocketIfIdle().finally(finalizeStop);
+                return;
+            }
+
+            entry.responseSocket.close(() => {
+                this.closeListeningSocketIfIdle().finally(finalizeStop);
             });
         });
     }
 
-    handleMessage(entry, msg, rinfo) {
+    ensureListeningSocket() {
+        if (this.listenSocket) {
+            return this.listeningReadyPromise || Promise.resolve();
+        }
+
+        const socket = dgram.createSocket({ type: "udp4", reuseAddr: true });
+        this.listenSocket = socket;
+        this.listeningReadyPromise = new Promise((resolve, reject) => {
+            let settled = false;
+
+            socket.on("error", (err) => {
+                logger.error(`WS-Discovery shared socket error: ${err.message}`);
+                if (!settled) {
+                    settled = true;
+                    this.listenSocket = null;
+                    this.listeningReadyPromise = null;
+                    reject(err);
+                    return;
+                }
+
+                for (const entry of this.entries.values()) {
+                    entry.onFatalError?.(err);
+                }
+            });
+
+            socket.on("message", (msg, rinfo) => {
+                try {
+                    this.handleMessage(msg, rinfo);
+                } catch (err) {
+                    logger.error(`WS-Discovery message handling error from ${rinfo.address}:${rinfo.port}: ${err.message}`);
+                }
+            });
+
+            socket.bind(DISCOVERY_PORT, "0.0.0.0", () => {
+                settled = true;
+                logger.debug("discovery", `WS-Discovery shared listener ready on 0.0.0.0:${DISCOVERY_PORT}`);
+                resolve();
+            });
+        });
+
+        return this.listeningReadyPromise;
+    }
+
+    closeListeningSocketIfIdle() {
+        const hasOtherRunningEntries = Array.from(this.entries.values()).some((entry) => entry.running);
+        if (hasOtherRunningEntries || !this.listenSocket) {
+            return Promise.resolve();
+        }
+
+        const socket = this.listenSocket;
+        this.listenSocket = null;
+        this.listeningReadyPromise = null;
+
+        return new Promise((resolve) => {
+            socket.close(() => {
+                logger.debug("discovery", `WS-Discovery shared listener stopped on 0.0.0.0:${DISCOVERY_PORT}`);
+                resolve();
+            });
+        });
+    }
+
+    handleMessage(msg, rinfo) {
         const xml = msg.toString("utf8");
 
-        // Very simple filter: only respond to Probe messages
         if (!xml.includes("<d:Probe") && !xml.includes("<Probe")) {
             return;
         }
 
+        const activeEntries = Array.from(this.entries.values()).filter((entry) => entry.running);
+        if (activeEntries.length === 0) {
+            return;
+        }
+
         logger.debug("discovery",
-            `WS-Discovery Probe received for ${entry.camera.name} from ${rinfo.address}:${rinfo.port} ` +
-            `(endpoint=${entry.endpointAddress}, xaddr=${entry.xaddr}, mac=${entry.camera.mac}, ip=${entry.camera.ip})`
+            `WS-Discovery Probe received from ${rinfo.address}:${rinfo.port} ` +
+            `(activeCameras=${activeEntries.length})`
         );
 
         const probeTypes = this.extractProbeTypes(xml);
         if (probeTypes) {
-            logger.debug("discovery",
-                `WS-Discovery Probe Types for ${entry.camera.name}: ${probeTypes}`
-            );
+            logger.debug("discovery", `WS-Discovery Probe Types: ${probeTypes}`);
         }
 
         const relatesTo = this.extractMessageId(xml);
-        if (this.isDuplicateProbe(entry, relatesTo, xml, rinfo)) {
+        for (const entry of activeEntries) {
+            const replyDelayMs = this.getReplyDelayMs(activeEntries.length);
             logger.debug("discovery",
-                `Skipping duplicate Probe for ${entry.camera.name} from ${rinfo.address}:${rinfo.port} ` +
-                `(messageId=${relatesTo || "<missing>"})`
+                `Scheduling ProbeMatches for ${entry.camera.name} to ${rinfo.address}:${rinfo.port} ` +
+                `(delay=${replyDelayMs}ms, endpoint=${entry.endpointAddress}, xaddr=${entry.xaddr}, mac=${entry.camera.mac}, ip=${entry.camera.ip})`
             );
+
+            setTimeout(() => {
+                if (!entry.running) {
+                    return;
+                }
+
+                this.sendProbeMatch(entry, relatesTo, rinfo);
+            }, replyDelayMs);
+        }
+    }
+
+    sendProbeMatch(entry, relatesTo, rinfo) {
+        const responseXml = this.buildProbeMatchesResponse(entry, relatesTo);
+        const buf = Buffer.from(responseXml, "utf8");
+
+        if (!entry.responseSocket) {
+            logger.warn(`Skipping ProbeMatches for ${entry.camera.name}; response socket is not available`);
             return;
         }
 
-        const responseXml = this.buildProbeMatchesResponse(entry, relatesTo);
-        const buf = Buffer.from(responseXml, "utf8");
-        const responseSocket = entry.responseSocket || entry.socket;
-        responseSocket.send(buf, 0, buf.length, rinfo.port, rinfo.address, (err) => {
+        entry.responseSocket.send(buf, 0, buf.length, rinfo.port, rinfo.address, (err) => {
             if (err) {
                 logger.error(
                     `Failed to send ProbeMatches for ${entry.camera.name} to ${rinfo.address}:${rinfo.port} - ${err.message}`
@@ -219,29 +278,12 @@ class DiscoveryManager {
         });
     }
 
-    isDuplicateProbe(entry, messageId, xml, rinfo) {
-        const fallbackId = crypto.createHash("sha1").update(xml, "utf8").digest("hex");
-        const key = [
-            entry.camera.mac,
-            rinfo.address,
-            rinfo.port,
-            messageId || fallbackId
-        ].join("|");
-        const now = Date.now();
-
-        for (const [recentKey, expiresAt] of this.recentProbes.entries()) {
-            if (expiresAt <= now) {
-                this.recentProbes.delete(recentKey);
-            }
+    getReplyDelayMs(activeCameraCount) {
+        if (activeCameraCount <= 1) {
+            return 0;
         }
 
-        const expiresAt = this.recentProbes.get(key);
-        if (expiresAt && expiresAt > now) {
-            return true;
-        }
-
-        this.recentProbes.set(key, now + DEDUPE_TTL_MS);
-        return false;
+        return Math.floor(Math.random() * MAX_REPLY_JITTER_MS);
     }
 
     getDiscoveryScopes(camera) {

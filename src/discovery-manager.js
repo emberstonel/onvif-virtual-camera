@@ -1,15 +1,19 @@
+const crypto = require("crypto");
 const dgram = require("dgram");
 const logger = require("./log-manager");
 
 const MULTICAST_ADDRESS = "239.255.255.250";
 const DISCOVERY_PORT = 3702;
 const MAX_REPLY_JITTER_MS = 75;
+const DUPLICATE_WINDOW_MS = 50;
+const MAX_RECENT_PROBES = 50;
 
 class DiscoveryManager {
     constructor() {
         this.entries = new Map();
         this.listenSocket = null;
         this.listeningReadyPromise = null;
+        this.recentProbes = [];
     }
 
     async startCamera(camera, onFatalError) {
@@ -111,10 +115,7 @@ class DiscoveryManager {
                 entry.running = true;
                 entry.camera.lifecycle.discoveryReady = true;
 
-                logger.debug("discovery",
-                    `WS-Discovery registered for ${entry.camera.name} on 0.0.0.0:${DISCOVERY_PORT} ` +
-                    `(reply source ${entry.camera.ip}, XAddr: ${entry.xaddr})`
-                );
+                logger.debug("discovery", `WS-Discovery registered for ${entry.camera.name} on 0.0.0.0:${DISCOVERY_PORT} ` + `(reply source ${entry.camera.ip}, XAddr: ${entry.xaddr})`);
 
                 resolveStartup();
             });
@@ -227,10 +228,7 @@ class DiscoveryManager {
             return;
         }
 
-        logger.debug("discovery",
-            `WS-Discovery Probe received from ${rinfo.address}:${rinfo.port} ` +
-            `(activeCameras=${activeEntries.length})`
-        );
+        logger.debug("discovery", `WS-Discovery Probe received from ${rinfo.address}:${rinfo.port} ` + `(activeCameras=${activeEntries.length})`);
 
         const probeTypes = this.extractProbeTypes(xml);
         if (probeTypes) {
@@ -238,6 +236,11 @@ class DiscoveryManager {
         }
 
         const relatesTo = this.extractMessageId(xml);
+        if (this.isDuplicateProbe(relatesTo, xml, rinfo)) {
+            logger.debug("discovery", `Skipping shared duplicate Probe from ${rinfo.address}:${rinfo.port} ` + `(messageId=${relatesTo || "<missing>"})`);
+            return;
+        }
+
         for (const entry of activeEntries) {
             const replyDelayMs = this.getReplyDelayMs(activeEntries.length);
             logger.debug("discovery",
@@ -266,9 +269,7 @@ class DiscoveryManager {
 
         entry.responseSocket.send(buf, 0, buf.length, rinfo.port, rinfo.address, (err) => {
             if (err) {
-                logger.error(
-                    `Failed to send ProbeMatches for ${entry.camera.name} to ${rinfo.address}:${rinfo.port} - ${err.message}`
-                );
+                logger.error(`Failed to send ProbeMatches for ${entry.camera.name} to ${rinfo.address}:${rinfo.port} - ${err.message}`);
             } else {
                 logger.debug("discovery",
                     `ProbeMatches sent for ${entry.camera.name} to ${rinfo.address}:${rinfo.port} ` +
@@ -284,6 +285,23 @@ class DiscoveryManager {
         }
 
         return Math.floor(Math.random() * MAX_REPLY_JITTER_MS);
+    }
+
+    isDuplicateProbe(messageId, xml, rinfo) {
+        const now = Date.now();
+        const fallbackId = crypto.createHash("sha1").update(xml, "utf8").digest("hex");
+        const key = `${rinfo.address}|${rinfo.port}|${messageId || fallbackId}`;
+
+        this.recentProbes = this.recentProbes
+            .filter((probe) => now - probe.seenAt <= DUPLICATE_WINDOW_MS)
+            .slice(-(MAX_RECENT_PROBES - 1));
+
+        if (this.recentProbes.some((probe) => probe.key === key)) {
+            return true;
+        }
+
+        this.recentProbes.push({ key, seenAt: now });
+        return false;
     }
 
     getDiscoveryScopes(camera) {

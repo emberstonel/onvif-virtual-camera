@@ -9,7 +9,7 @@ async function start() {
     
     // Begin logging and error tracking
     const startupSummaries = [];
-    logger.info("Starting ONVIF Virtual Camera Proxy...");
+    logger.info("Starting ONVIF Virtual Camera Server...");
 
     // Load config.yaml from local path (for debug) or the mounted root path
     const configPath = fs.existsSync(path.resolve("./config.yml")) ? path.resolve("./config.yml") : "/config.yml";

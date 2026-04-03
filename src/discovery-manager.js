@@ -228,17 +228,17 @@ class DiscoveryManager {
             return;
         }
 
-        logger.debug("discovery", `WS-Discovery Probe received from ${rinfo.address}:${rinfo.port} ` + `(activeCameras=${activeEntries.length})`);
-
-        const probeTypes = this.extractProbeTypes(xml);
-        if (probeTypes) {
-            logger.debug("discovery", `WS-Discovery Probe Types: ${probeTypes}`);
-        }
-
         const relatesTo = this.extractMessageId(xml);
         if (this.isDuplicateProbe(relatesTo, xml, rinfo)) {
             logger.debug("discovery", `Skipping shared duplicate Probe from ${rinfo.address}:${rinfo.port} ` + `(messageId=${relatesTo || "<missing>"})`);
             return;
+        }
+
+        logger.debug("discovery", `WS-Discovery Probe received from ${rinfo.address}:${rinfo.port} ` + `(activeCameras=${activeEntries.length}, messageId=${relatesTo || "<missing>"})`);
+
+        const probeTypes = this.extractProbeTypes(xml);
+        if (probeTypes) {
+            logger.debug("discovery", `WS-Discovery Probe Types: ${probeTypes}`);
         }
 
         for (const entry of activeEntries) {

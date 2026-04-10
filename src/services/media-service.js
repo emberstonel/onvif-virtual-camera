@@ -9,6 +9,9 @@ class MediaService {
         this.videoSourceToken = `video_source_${tokenSuffix}`;
         this.videoSourceConfigToken = `video_source_config_${tokenSuffix}`;
         this.videoEncoderToken = `video_encoder_${tokenSuffix}`;
+        this.profileName = `VirtualProfile_${tokenSuffix}`;
+        this.videoSourceConfigName = `VideoSourceConfig_${tokenSuffix}`;
+        this.videoEncoderConfigName = `VideoEncoderConfig_${tokenSuffix}`;
     }
 
     buildTokenSuffix() {
@@ -27,12 +30,12 @@ class MediaService {
                 token: this.profileToken,
                 fixed: true
             },
-            Name: "VirtualProfile",
+            Name: this.profileName,
             VideoSourceConfiguration: {
                 $attributes: {
                     token: this.videoSourceConfigToken
                 },
-                Name: "VideoSourceConfig",
+                Name: this.videoSourceConfigName,
                 UseCount: 1,
                 SourceToken: this.videoSourceToken
             },
@@ -40,7 +43,7 @@ class MediaService {
                 $attributes: {
                     token: this.videoEncoderToken
                 },
-                Name: "VideoEncoderConfig",
+                Name: this.videoEncoderConfigName,
                 UseCount: 1,
                 Encoding: this.camera.stream.encoding,
                 Resolution: {
@@ -140,7 +143,7 @@ class MediaService {
                 $attributes: {
                     token: this.videoSourceConfigToken
                 },
-                Name: "VideoSourceConfig",
+                Name: this.videoSourceConfigName,
                 UseCount: 1,
                 SourceToken: this.videoSourceToken
             }
@@ -159,7 +162,7 @@ class MediaService {
                 $attributes: {
                     token: this.videoEncoderToken
                 },
-                Name: "VideoEncoderConfig",
+                Name: this.videoEncoderConfigName,
                 UseCount: 1,
                 Encoding: this.camera.stream.encoding,
                 Resolution: {

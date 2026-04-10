@@ -309,6 +309,10 @@ function normalizeConfiguredStream(stream) {
 }
 
 function normalizeIdentity(cam) {
+    const defaultHardwareId = [normalizeOptionalString(cam.model, "model"), cam.mac.replace(/:/g, "").toUpperCase()]
+        .filter(Boolean)
+        .join("-");
+
     return {
         manufacturer: normalizeOptionalString(cam.manufacturer, "manufacturer") || "VirtualCam",
         model: normalizeOptionalString(cam.model, "model") || cam.name,
@@ -316,7 +320,7 @@ function normalizeIdentity(cam) {
         serialNumber: normalizeOptionalString(cam.serial_number, "serial_number")
             || cam.mac.replace(/:/g, "").toUpperCase(),
         hardwareId: normalizeOptionalString(cam.hardware_id, "hardware_id")
-            || normalizeOptionalString(cam.model, "model")
+            || defaultHardwareId
             || cam.mac.replace(/:/g, "").toUpperCase()
     };
 }

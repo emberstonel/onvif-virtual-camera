@@ -92,6 +92,13 @@ if [[ ${#IPS[@]} -ne $COUNT ]]; then
     exit 1
 fi
 
+if printf '%s\n' "${IPS[@]}" | grep -qi '^dhcp$'; then
+    if ! command -v dhcpcd >/dev/null 2>&1 && ! command -v dhclient >/dev/null 2>&1 && ! command -v udhcpc >/dev/null 2>&1; then
+        echo "Error: DHCP mode is configured but no supported DHCP client was found (dhcpcd, dhclient, or udhcpc)."
+        exit 1
+    fi
+fi
+
 # Enable promiscuous mode on the parent interface
 ip link set "$PARENT_IFACE" promisc on
 
@@ -124,15 +131,27 @@ echo "[INFO] Generating runtime script: $RUNTIME_SCRIPT"
     echo "apply_arp_settings default"
     echo "apply_arp_settings \"\$PARENT_IFACE\""
     echo ""
+    echo "sanitize_hostname() {"
+    echo "    local value=\"\$1\""
+    echo "    value=\"\$(printf '%s' \"\$value\" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9-]+/-/g; s/^-+//; s/-+\$//; s/-{2,}/-/g')\""
+    echo "    if [[ -z \"\$value\" ]]; then"
+    echo "        value=\"virtual-camera\""
+    echo "    fi"
+    echo "    printf '%s' \"\$value\""
+    echo "}"
+    echo ""
 
     for i in "${!NAMES[@]}"; do
         NAME="$((i+1))"
+        CAMERA_NAME="${NAMES[$i]}"
         MAC="${MACS[$i]}"
         IP_ASSIGNMENT="${IPS[$i]}"
         IFACE="vcam-${NAME}"
 
         echo "# --- $IFACE ---"
         echo "DESIRED_MAC=\"${MAC,,}\""
+        echo "DHCP_CLIENT_ID=\"01:${MAC,,}\""
+        echo "DHCP_HOSTNAME=\"\$(sanitize_hostname \"${CAMERA_NAME}\")\""
         echo "if ip link show \"$IFACE\" >/dev/null 2>&1; then"
         echo "    CURRENT_MAC=\"\$(get_iface_mac \"$IFACE\")\""
         echo "    if [[ \"\$CURRENT_MAC\" != \"\$DESIRED_MAC\" ]]; then"
@@ -155,13 +174,14 @@ echo "[INFO] Generating runtime script: $RUNTIME_SCRIPT"
             echo "else"
             echo "    sleep 1.5"
             if command -v dhcpcd >/dev/null 2>&1; then
-                echo "    dhcpcd -4 -I -G -C --config /dev/null \"$IFACE\""
+                echo "    dhcpcd -4 -I \"\$DHCP_CLIENT_ID\" -h \"\$DHCP_HOSTNAME\" -G -C --config /dev/null \"$IFACE\""
             elif command -v dhclient >/dev/null 2>&1; then
                 echo "    dhclient -4 -1 -v \"$IFACE\""
             elif command -v udhcpc >/dev/null 2>&1; then
                 echo "    udhcpc -i \"$IFACE\" -n -q"
             else
-                DHCP_FAIL=true
+                echo "    echo \"[ERROR] DHCP mode requested for $IFACE but no supported DHCP client is installed\""
+                echo "    exit 1"
             fi
             echo "fi"
         else
@@ -178,11 +198,6 @@ echo "[INFO] Generating runtime script: $RUNTIME_SCRIPT"
     done
 
 } > "$RUNTIME_SCRIPT"
-
-if $DHCP_FAIL; then
-    echo "[WARN] DHCP mode enabled but a DHCP client could not be found. Try installing 'dhcpcd' first (eg 'apt install dhcpcd')."
-fi
-
 chmod +x "$RUNTIME_SCRIPT"
 echo "[INFO] Runtime script created and marked executable."
 
@@ -207,7 +222,10 @@ echo "[INFO] Writing systemd service: $SERVICE_FILE"
 echo "[INFO] Reloading systemd..."
 systemctl daemon-reload
 
-echo "[INFO] Enabling and starting service..."
-systemctl enable --now onvif-macvlan.service
+echo "[INFO] Enabling service..."
+systemctl enable onvif-macvlan.service
+
+echo "[INFO] Restarting service..."
+systemctl restart onvif-macvlan.service
 
 echo "[INFO] Setup complete."

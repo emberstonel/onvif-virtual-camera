@@ -1,6 +1,6 @@
 # ONVIF Virtual Camera
 
-This project creates virtual ONVIF cameras for UniFi Protect. It is intended for sources that Protect cannot adopt cleanly on its own, including cameras without useful ONVIF support and multi-head cameras that need to appear as separate devices.
+This project creates virtual ONVIF cameras for UniFi Protect. It is intended for sources that Protect cannot adopt cleanly on its own, including cameras without useful ONVIF support and multi-head cameras that need to appear as separate devices. It is an independent fork of the original [`onvif-server`](https://github.com/daniela-hase/onvif-server) project by Daniela Hasenbring.
 
 Each virtual camera gets its own:
 

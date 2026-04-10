@@ -4,6 +4,8 @@ const OnvifServer = require("./onvif-server");
 
 const DEFAULT_ONVIF_PORT = 80;
 const DEFAULT_RTSP_PROXY_PORT = 8554;
+const DHCP_STARTUP_RETRY_DELAY_MS = 2000;
+const DHCP_STARTUP_MAX_ATTEMPTS = 10;
 
 class CameraManager {
     constructor(cameraConfig, discoveryManager) {
@@ -101,6 +103,36 @@ class CameraManager {
         };
     }
 
+    async resolveRuntimeWithDhcpRetry() {
+        if (this.cameraConfig.ipAssignment?.mode !== "dhcp") {
+            return this.resolveRuntime();
+        }
+
+        let lastError;
+        for (let attempt = 1; attempt <= DHCP_STARTUP_MAX_ATTEMPTS; attempt += 1) {
+            try {
+                return this.resolveRuntime();
+            } catch (err) {
+                lastError = err;
+
+                if (attempt === DHCP_STARTUP_MAX_ATTEMPTS) {
+                    break;
+                }
+
+                logger.warn(
+                    `Waiting for DHCP address for ${this.cameraConfig.name} ` +
+                    `(attempt ${attempt}/${DHCP_STARTUP_MAX_ATTEMPTS}): ${err.message}`
+                );
+
+                await new Promise((resolve) => {
+                    setTimeout(resolve, DHCP_STARTUP_RETRY_DELAY_MS);
+                });
+            }
+        }
+
+        throw lastError;
+    }
+
     async handleNetworkChange(network) {
         if (this.restarting) {
             return;
@@ -162,6 +194,11 @@ class CameraManager {
                     await this.handleNetworkChange(network);
                 }
             } catch (err) {
+                if (this.cameraConfig.ipAssignment?.mode === "dhcp") {
+                    logger.warn(`DHCP state not ready for ${this.cameraConfig.name}: ${err.message}`);
+                    return;
+                }
+
                 logger.error(`Failed to refresh network state for ${this.cameraConfig.name}: ${err.message}`);
                 process.nextTick(() => {
                     throw err;
@@ -179,7 +216,7 @@ class CameraManager {
     async start() {
         logger.info(`Initializing virtual camera: ${this.cameraConfig.name}`);
 
-        const camera = this.resolveRuntime();
+        const camera = await this.resolveRuntimeWithDhcpRetry();
         logger.info(`Attempting to bind camera ${camera.name} to ${camera.interface} with IP ${camera.ip}...`);
 
         this.server = new OnvifServer(camera, this.discoveryManager);

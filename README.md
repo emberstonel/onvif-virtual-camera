@@ -202,7 +202,7 @@ If startup fails, the logs should point to the relevant stage, such as config va
 ## Adding Cameras to UniFi Protect
 
 1. Open UniFi Protect and navigate to Devices.
-2. Your virtual cameras should appear for adoption in the list; click "Adopt".
+2. Your virtual cameras should appear for adoption in the list; click the "Adopt" link.
 3. Enter the source credentials if the camera requires authentication.
 4. Repeat for each virtual camera identity you configured.
 

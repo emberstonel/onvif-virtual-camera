@@ -3,12 +3,22 @@ const logger = require("../log-manager");
 class MediaService {
     constructor(camera) {
         this.camera = camera;
+        const tokenSuffix = this.buildTokenSuffix();
 
-        // Protect expects exactly one profile with predictable tokens
-        this.profileToken = "profile_1";
-        this.videoSourceToken = "video_source_1";
-        this.videoSourceConfigToken = "video_source_config_1";
-        this.videoEncoderToken = "video_encoder_1";
+        this.profileToken = `profile_${tokenSuffix}`;
+        this.videoSourceToken = `video_source_${tokenSuffix}`;
+        this.videoSourceConfigToken = `video_source_config_${tokenSuffix}`;
+        this.videoEncoderToken = `video_encoder_${tokenSuffix}`;
+    }
+
+    buildTokenSuffix() {
+        const raw = this.camera?.identity?.serialNumber
+            || this.camera?.mac
+            || this.camera?.name
+            || "camera";
+
+        const normalized = String(raw).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+        return normalized || "camera";
     }
 
     buildProfile() {

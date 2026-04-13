@@ -148,10 +148,10 @@ The helper script:
 
 ### Using the helper script for setup
 
-Start or create the container first, then copy the helper script to the host (if your container name differs, adjust "onvif-server" in the command below accordingly).
+Start or create the container first, then copy the helper script to the host (if your container name differs, adjust "onvif-vcam-server" in the command below accordingly).
 
 ```bash
-sudo docker cp onvif-server:/app/resources/macvlan-init.sh ./macvlan-init.sh
+sudo docker cp onvif-vcam-server:/app/resources/macvlan-init.sh ./macvlan-init.sh
 sudo chmod +x ./macvlan-init.sh
 ```
 
@@ -173,9 +173,9 @@ Example Docker Compose configuration:
 
 ```yaml
 services:
-  onvif-server:
-    image: ghcr.io/emberstonel/onvif-server
-    container_name: onvif-server
+  onvif-vcam-server:
+    image: ghcr.io/emberstonel/onvif-virtual-camera
+    container_name: onvif-vcam-server
     network_mode: host
     restart: unless-stopped
     volumes:
@@ -196,7 +196,7 @@ sudo docker compose up -d
 View logs:
 
 ```bash
-sudo docker logs -f onvif-server
+sudo docker logs -f onvif-vcam-server
 ```
 
 On a successful startup, expect to see:

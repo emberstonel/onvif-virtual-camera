@@ -1,14 +1,14 @@
 {
-  "name": "onvif-proxy",
+  "name": "onvif-virtual-camera",
   "version": "1.0.0",
-  "description": "ONVIF Virtual Camera Proxy",
+  "description": "Virtual ONVIF camera server for UniFi Protect",
   "main": "main.js",
   "type": "commonjs",
   "license": "MIT",
-  "author": {
-    "name": "Daniela Hasenbring",
-    "email": "daniela@koshigaya.de"
-  },
+  "author": "Lucas Emberstone",
+  "contributors": [
+    "Daniela Hasenbring <daniela@koshigaya.de>"
+  ],
   "scripts": {
     "start": "node main.js"
   },

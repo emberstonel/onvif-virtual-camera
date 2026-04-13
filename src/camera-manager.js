@@ -29,7 +29,8 @@ class CameraManager {
             ip: this.camera?.ip || null,
             deviceServiceUrl: this.camera?.endpoints?.deviceServiceUrl || null,
             mediaServiceUrl: this.camera?.endpoints?.mediaServiceUrl || null,
-            rtspUri: this.camera?.endpoints?.rtspUri || null,
+            rtspUriHq: this.camera?.endpoints?.rtspUriHq || null,
+            rtspUriLq: this.camera?.endpoints?.rtspUriLq || null,
             snapshotUri: this.camera?.endpoints?.snapshotUri || null,
             lifecycle: {
                 configLoaded: !!lifecycle.configLoaded,
@@ -55,7 +56,8 @@ class CameraManager {
             endpoints: {
                 deviceServiceUrl: `http://${network.ip}:${onvifPort}/onvif/device_service`,
                 mediaServiceUrl: `http://${network.ip}:${onvifPort}/onvif/media_service`,
-                rtspUri: `rtsp://${network.ip}:${rtspProxyPort}${this.cameraConfig.rtspPath}`,
+                rtspUriHq: `rtsp://${network.ip}:${rtspProxyPort}${this.cameraConfig.rtspPathHq}`,
+                rtspUriLq: `rtsp://${network.ip}:${rtspProxyPort}${this.cameraConfig.rtspPathLq}`,
                 snapshotUri: `http://${network.ip}:${onvifPort}${this.cameraConfig.snapshotPath}`
             },
             source: {
@@ -63,8 +65,10 @@ class CameraManager {
                 rtspPort: this.cameraConfig.host.rtsp_port,
                 snapshotUrl: this.cameraConfig.snapshotUrl,
                 snapshotPath: this.cameraConfig.snapshotPath,
-                rtspUrl: this.cameraConfig.rtspUrl
+                rtspUrlHq: this.cameraConfig.rtspUrlHq,
+                rtspUrlLq: this.cameraConfig.rtspUrlLq
             },
+            streams: this.cameraConfig.streams,
             identity: this.cameraConfig.identity,
             lifecycle: {
                 configLoaded: true,

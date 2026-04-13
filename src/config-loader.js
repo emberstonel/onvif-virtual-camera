@@ -37,6 +37,21 @@ function getMinimumStreamConfig() {
     };
 }
 
+function normalizeRtspPath(path, label) {
+    if (typeof path !== "string") {
+        throw new Error(`${label} must be a string.`);
+    }
+
+    const trimmed = path.trim();
+    if (trimmed === "") {
+        throw new Error(`${label} must not be empty.`);
+    }
+
+    return trimmed.startsWith("/")
+        ? trimmed
+        : `/${trimmed}`;
+}
+
 function loadConfig(configPath) {
     if (!fs.existsSync(configPath)) {
         throw new Error(`Config file not found at ${configPath}`);
@@ -120,11 +135,8 @@ function loadConfig(configPath) {
         }
         seenCameraMacs.add(mac);
 
-        // Ensure paths start with '/'
-        const rtspPath = cam.rtsp_path.startsWith("/")
-            ? cam.rtsp_path
-            : `/${cam.rtsp_path}`;
-
+        const rtspPathHq = normalizeRtspPath(cam.rtsp_path_hq, `virtual_camera '${cam.name}'.rtsp_path_hq`);
+        const rtspPathLq = normalizeRtspPath(cam.rtsp_path_lq, `virtual_camera '${cam.name}'.rtsp_path_lq`);
         const snapshotPath = cam.snapshot_path.startsWith("/")
             ? cam.snapshot_path
             : `/${cam.snapshot_path}`;
@@ -135,8 +147,8 @@ function loadConfig(configPath) {
             : "";
 
         // RTSP URL
-        const rtspUrl =
-            `rtsp://${authPrefix}${source.hostname}:${source.rtsp_port}${rtspPath}`;
+        const rtspUrlHq = `rtsp://${authPrefix}${source.hostname}:${source.rtsp_port}${rtspPathHq}`;
+        const rtspUrlLq = `rtsp://${authPrefix}${source.hostname}:${source.rtsp_port}${rtspPathLq}`;
 
         // Snapshot URL
         const snapshotUrl =
@@ -148,11 +160,14 @@ function loadConfig(configPath) {
             model: cam.model,
             mac,
             ipAssignment: normalizeIpAssignment(cam.ip, `virtual_camera '${cam.name}'.ip`),
-            rtspPath,
+            rtspPathHq,
+            rtspPathLq,
             snapshotPath,
-            rtspUrl,
+            rtspUrlHq,
+            rtspUrlLq,
             snapshotUrl,
-            streamConfig: normalizeConfiguredStream(cam.stream),
+            streamConfigHq: normalizeConfiguredStream(cam.stream_hq, `virtual_camera '${cam.name}'.stream_hq`),
+            streamConfigLq: normalizeConfiguredStream(cam.stream_lq, `virtual_camera '${cam.name}'.stream_lq`),
             identity: normalizeIdentity(cam),
             auth: hasAuth(source) ? {
                 username: source.auth.username,
@@ -165,8 +180,10 @@ function loadConfig(configPath) {
             }
         };
 
-        // Fetch stream config
-        camera.stream = resolveStreamDetails(camera, runtime);
+        camera.streams = {
+            hq: resolveStreamDetails(camera, runtime, "hq"),
+            lq: resolveStreamDetails(camera, runtime, "lq")
+        };
 
         return camera;
     });
@@ -174,12 +191,15 @@ function loadConfig(configPath) {
     return { runtime, cameras };
 }
 
-function resolveStreamDetails(cam, runtime) {
+function resolveStreamDetails(cam, runtime, streamKind) {
     const defaults = getDefaultStreamConfig();
-    const configured = cam.streamConfig || {};
+    const configured = streamKind === "lq"
+        ? (cam.streamConfigLq || {})
+        : (cam.streamConfigHq || {});
+    const streamLabel = streamKind.toUpperCase();
 
-    if (cam.streamConfig) {
-        logger.info(`Skipping ffprobe for '${cam.name}' because stream config was provided`);
+    if (Object.keys(configured).length > 0) {
+        logger.info(`Skipping ffprobe for '${cam.name}' ${streamLabel} stream because stream config was provided`);
         return {
             ...defaults,
             ...configured
@@ -187,14 +207,14 @@ function resolveStreamDetails(cam, runtime) {
     }
 
     if (!runtime.probe_streams) {
-        logger.info(`Skipping ffprobe for '${cam.name}' because runtime.probe_streams=false`);
+        logger.info(`Skipping ffprobe for '${cam.name}' ${streamLabel} stream because runtime.probe_streams=false`);
         return {
             ...defaults,
             ...configured
         };
     }
 
-    const probed = fetchStreamDetails(cam, runtime);
+    const probed = fetchStreamDetails(cam, runtime, streamKind);
     return {
         ...defaults,
         ...probed,
@@ -202,13 +222,15 @@ function resolveStreamDetails(cam, runtime) {
     };
 }
 
-function fetchStreamDetails(cam, runtime) {
+function fetchStreamDetails(cam, runtime, streamKind) {
     const defaults = getDefaultStreamConfig();
     const minimums = getMinimumStreamConfig();
     const ffprobePath = process.env.FFPROBE_PATH || "/usr/bin/ffprobe";
+    const streamLabel = streamKind.toUpperCase();
+    const rtspUrl = streamKind === "lq" ? cam.rtspUrlLq : cam.rtspUrlHq;
     logger.debug('config', `Using ffprobe path: ${ffprobePath}`);
 
-    logger.debug('config', `Calling ffprobe with URL: ${cam.rtspUrl}`);
+    logger.debug('config', `Calling ffprobe for '${cam.name}' ${streamLabel} stream with URL: ${rtspUrl}`);
     const result = spawnSync(
         ffprobePath,
         [
@@ -217,7 +239,7 @@ function fetchStreamDetails(cam, runtime) {
             "-select_streams", "v:0",
             "-show_entries", "stream=codec_name,width,height,avg_frame_rate,bit_rate",
             "-of", "json",
-            cam.rtspUrl
+            rtspUrl
         ],
         {
             encoding: "utf8",
@@ -226,13 +248,13 @@ function fetchStreamDetails(cam, runtime) {
     );
 
     if (result.error) {
-        logger.warn(`ffprobe failed for '${cam.name}': ${result.error.message}; using defaults`);
+        logger.warn(`ffprobe failed for '${cam.name}' ${streamLabel} stream: ${result.error.message}; using defaults`);
         return defaults;
     }
 
     if (result.status !== 0) {
         logger.warn(
-            `ffprobe returned non-zero for '${cam.name}': ` +
+            `ffprobe returned non-zero for '${cam.name}' ${streamLabel} stream: ` +
             `${(result.stderr || "").trim() || `exit ${result.status}`}; using defaults`
         );
         return defaults;
@@ -242,13 +264,13 @@ function fetchStreamDetails(cam, runtime) {
     try {
         parsed = JSON.parse(result.stdout);
     } catch (err) {
-        logger.warn(`Failed to parse ffprobe output for '${cam.name}': ${err.message}; using defaults`);
+        logger.warn(`Failed to parse ffprobe output for '${cam.name}' ${streamLabel} stream: ${err.message}; using defaults`);
         return defaults;
     }
 
     const stream = parsed?.streams?.[0];
     if (!stream) {
-        logger.warn(`ffprobe returned no video stream for '${cam.name}'; using defaults`);
+        logger.warn(`ffprobe returned no video stream for '${cam.name}' ${streamLabel} stream; using defaults`);
         return defaults;
     }
 
@@ -280,29 +302,29 @@ function fetchStreamDetails(cam, runtime) {
         quality: defaults.quality
     };
 
-    logger.debug('config', `Detected stream details for '${cam.name}': ${detected.encoding}, ${detected.width}x${detected.height}, ${detected.framerate}fps, ${detected.bitrate}kbps`);
+    logger.debug('config', `Detected ${streamLabel} stream details for '${cam.name}': ${detected.encoding}, ${detected.width}x${detected.height}, ${detected.framerate}fps, ${detected.bitrate}kbps`);
 
     return detected;
 }
 
-function normalizeConfiguredStream(stream) {
+function normalizeConfiguredStream(stream, label) {
     if (stream === undefined || stream === null) {
         return null;
     }
 
     const normalized = {
         encoding: stream.encoding,
-        width: normalizePositiveInteger(stream.width, "stream.width"),
-        height: normalizePositiveInteger(stream.height, "stream.height"),
-        framerate: normalizePositiveInteger(stream.framerate, "stream.framerate"),
-        bitrate: normalizePositiveInteger(stream.bitrate, "stream.bitrate"),
-        quality: normalizePositiveNumber(stream.quality, "stream.quality")
+        width: normalizePositiveInteger(stream.width, `${label}.width`),
+        height: normalizePositiveInteger(stream.height, `${label}.height`),
+        framerate: normalizePositiveInteger(stream.framerate, `${label}.framerate`),
+        bitrate: normalizePositiveInteger(stream.bitrate, `${label}.bitrate`),
+        quality: normalizePositiveNumber(stream.quality, `${label}.quality`)
     };
 
     const requiredKeys = ["encoding", "width", "height", "framerate", "bitrate", "quality"];
     const missingKeys = requiredKeys.filter((key) => normalized[key] === undefined);
     if (missingKeys.length > 0) {
-        throw new Error(`stream config is missing required field(s): ${missingKeys.join(", ")}.`);
+        throw new Error(`${label} config is missing required field(s): ${missingKeys.join(", ")}.`);
     }
 
     return normalized;
@@ -398,7 +420,7 @@ function validateHostSource(src) {
 }
 
 function validateVirtualCamera(cam) {
-    const required = ["name", "model", "mac", "ip", "host_source", "rtsp_path", "snapshot_path"];
+    const required = ["name", "model", "mac", "ip", "host_source", "rtsp_path_hq", "rtsp_path_lq", "snapshot_path"];
     for (const key of required) {
         if (!cam[key]) {
             throw new Error(`virtual_camera missing required field '${key}'.`);
@@ -409,8 +431,15 @@ function validateVirtualCamera(cam) {
         throw new Error(`virtual_camera '${cam.name}' has invalid MAC address '${cam.mac}'.`);
     }
 
-    if (cam.stream) {
-        normalizeConfiguredStream(cam.stream);
+    normalizeRtspPath(cam.rtsp_path_hq, `virtual_camera '${cam.name}'.rtsp_path_hq`);
+    normalizeRtspPath(cam.rtsp_path_lq, `virtual_camera '${cam.name}'.rtsp_path_lq`);
+
+    if (cam.stream_hq) {
+        normalizeConfiguredStream(cam.stream_hq, `virtual_camera '${cam.name}'.stream_hq`);
+    }
+
+    if (cam.stream_lq) {
+        normalizeConfiguredStream(cam.stream_lq, `virtual_camera '${cam.name}'.stream_lq`);
     }
 
     normalizeIdentity(cam);

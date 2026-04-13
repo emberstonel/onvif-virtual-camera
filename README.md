@@ -1,4 +1,4 @@
-# ONVIF Virtual Camera
+# ONVIF Virtual Camera Server
 
 This project creates virtual ONVIF cameras for UniFi Protect. It is intended for sources that Protect cannot adopt cleanly on its own, including cameras without useful ONVIF support and multi-head cameras that need to appear as separate devices. It is an independent fork of the original [`onvif-server`](https://github.com/daniela-hase/onvif-server) project by Daniela Hasenbring.
 
@@ -6,9 +6,8 @@ Each virtual camera gets its own:
 
 - MAC address
 - IP address
-- ONVIF Device Service
-- ONVIF Media Service
-- RTSP endpoint
+- ONVIF Device and Media Services
+- RTSP HQ and LQ endpoints
 - Snapshot endpoint
 
 The project is designed to run in Docker with host networking. Each virtual camera is bound to its own MacVLAN interface so UniFi Protect can adopt it as an individual device.
@@ -38,7 +37,7 @@ runtime:
 ```
 
 - `enable_debug_logs`: Uses `false`, `true`, or an array of debug categories (auth, config, device, discovery, http, lifecycle, media, network, snapshot).
-- `probe_streams`: Probe source streams with `ffprobe` when a camera does not define a `stream` block.
+- `probe_streams`: Probe source streams with `ffprobe` when a camera does not define `stream_hq` and `stream_lq` blocks.
 - `probe_timeout_ms`: Timeout for RTSP stream probing.
 - `ip_monitor_interval_ms`: Interval used to check for IP address changes due to DHCP.
 
@@ -74,7 +73,8 @@ model: "VCam-1080p"
 mac: "02:42:ac:11:00:11"
 ip: "192.168.1.210/24"
 host_source: cam1
-rtsp_path: "/live1"
+rtsp_path_hq: "/live1"
+rtsp_path_lq: "/live1-sub"
 snapshot_path: "/snapshot1.jpg"
 ```
 
@@ -84,7 +84,8 @@ snapshot_path: "/snapshot1.jpg"
 - `mac`: A unique MAC address for network services and that Protect will use for identity.
 - `ip`: Either the string `DHCP` or an IP address (in CIDR format) to use for network services.
 - `host_source`: Pointer to the parent `host` for this virtual camera.
-- `rtsp_path`: Path to be used for the RTSP stream.
+- `rtsp_path_hq`: Path to be used for the high-quality RTSP stream.
+- `rtsp_path_lq`: Path to be used for the low-quality RTSP stream.
 - `snapshot_path`: Path to be used for fetching the still image snapshot.
 
 With optional identity fields:
@@ -102,16 +103,24 @@ hardware_id: "00012-34567"
 And optional manual stream settings:
 
 ```yaml
-stream:
+stream_hq:
   encoding: "H264"
   width: 1920
   height: 1080
   framerate: 15
   bitrate: 2048
   quality: 5
+stream_lq:
+  encoding: "H264"
+  width: 640
+  height: 360
+  framerate: 10
+  bitrate: 512
+  quality: 3
 ```
 
-- `stream`: Must be complete if provided. If omitted, probing is used (if `probe_streams` also enabled).
+- `stream_hq`: Must be complete if provided. If omitted, probing is used for the HQ stream (if `probe_streams` also enabled).
+- `stream_lq`: Must be complete if provided. If omitted, it is derived using the same process as `stream_hq`.
 - `encoding`: Video codec to use. Supported values map cleanly to H264, H265, and MJPEG.
 - `width`: Frame width in pixels.
 - `height`: Frame height in pixels.
@@ -205,9 +214,3 @@ If startup fails, the logs should point to the relevant stage, such as config va
 2. Your virtual cameras should appear for adoption in the list; click the "Adopt" link.
 3. Enter the source credentials if the camera requires authentication.
 4. Repeat for each virtual camera identity you configured.
-
-## Notes
-
-- RTSP is proxied locally so Protect receives stream URIs from the adopted device identity.
-- Snapshot requests are also served locally by the virtual camera.
-- WSDL and XSD assets are stored locally in the repository, so runtime behavior does not depend on remote ONVIF schema URLs.

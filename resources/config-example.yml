@@ -28,22 +28,31 @@ virtual_cameras:
     mac: "02:42:ac:11:00:11"
     ip: "192.168.1.210/24"
     host_source: cam1
-    rtsp_path: "/live1"
+    rtsp_path_hq: "/live1"
+    rtsp_path_lq: "/live1-sub"
     snapshot_path: "/snapshot1.jpg"
-    stream:
+    stream_hq:
       encoding: "H264"
       width: 1920
       height: 1080
       framerate: 15
       bitrate: 2048
       quality: 5
+    stream_lq:
+      encoding: "H264"
+      width: 640
+      height: 360
+      framerate: 10
+      bitrate: 512
+      quality: 3
 
   - name: "VirtualCam2"
     model: "VCam-1080p"
     mac: "02:42:ac:11:00:12"
     ip: "dhcp"
     host_source: cam1
-    rtsp_path: "/live2"
+    rtsp_path_hq: "/live2"
+    rtsp_path_lq: "/live2-sub"
     snapshot_path: "/snapshot2.jpg"
 
   - name: "VirtualCam3"
@@ -51,5 +60,6 @@ virtual_cameras:
     mac: "02:42:ac:11:00:13"
     ip: "192.168.1.212/24"
     host_source: cam2
-    rtsp_path: "/live"
+    rtsp_path_hq: "/live"
+    rtsp_path_lq: "/live-sub"
     snapshot_path: "/snapshot.jpg"

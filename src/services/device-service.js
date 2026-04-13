@@ -42,7 +42,7 @@ class DeviceService {
             },
             Extension: {
                 ProfileCapabilities: {
-                    MaximumNumberOfProfiles: 1
+                    MaximumNumberOfProfiles: 2
                 }
             }
         };

@@ -5,13 +5,19 @@ class MediaService {
         this.camera = camera;
         const tokenSuffix = this.buildTokenSuffix();
 
-        this.profileToken = `profile_${tokenSuffix}`;
+        this.profileTokenHq = `profile_hq_${tokenSuffix}`;
+        this.profileTokenLq = `profile_lq_${tokenSuffix}`;
         this.videoSourceToken = `video_source_${tokenSuffix}`;
-        this.videoSourceConfigToken = `video_source_config_${tokenSuffix}`;
-        this.videoEncoderToken = `video_encoder_${tokenSuffix}`;
-        this.profileName = `VirtualProfile_${tokenSuffix}`;
-        this.videoSourceConfigName = `VideoSourceConfig_${tokenSuffix}`;
-        this.videoEncoderConfigName = `VideoEncoderConfig_${tokenSuffix}`;
+        this.videoSourceConfigTokenHq = `video_source_config_hq_${tokenSuffix}`;
+        this.videoSourceConfigTokenLq = `video_source_config_lq_${tokenSuffix}`;
+        this.videoEncoderTokenHq = `video_encoder_hq_${tokenSuffix}`;
+        this.videoEncoderTokenLq = `video_encoder_lq_${tokenSuffix}`;
+        this.profileNameHq = `VirtualProfile_HQ_${tokenSuffix}`;
+        this.profileNameLq = `VirtualProfile_LQ_${tokenSuffix}`;
+        this.videoSourceConfigNameHq = `VideoSourceConfig_HQ_${tokenSuffix}`;
+        this.videoSourceConfigNameLq = `VideoSourceConfig_LQ_${tokenSuffix}`;
+        this.videoEncoderConfigNameHq = `VideoEncoderConfig_HQ_${tokenSuffix}`;
+        this.videoEncoderConfigNameLq = `VideoEncoderConfig_LQ_${tokenSuffix}`;
     }
 
     buildTokenSuffix() {
@@ -24,37 +30,73 @@ class MediaService {
         return normalized || "camera";
     }
 
-    buildProfile() {
+    getProfileDefinitionByToken(token) {
+        if (token === this.profileTokenLq) {
+            return {
+                kind: "lq",
+                profileToken: this.profileTokenLq,
+                profileName: this.profileNameLq,
+                videoSourceConfigToken: this.videoSourceConfigTokenLq,
+                videoSourceConfigName: this.videoSourceConfigNameLq,
+                videoEncoderToken: this.videoEncoderTokenLq,
+                videoEncoderConfigName: this.videoEncoderConfigNameLq,
+                stream: this.camera.streams.lq,
+                streamUri: this.camera.endpoints.rtspUriLq
+            };
+        }
+
+        return {
+            kind: "hq",
+            profileToken: this.profileTokenHq,
+            profileName: this.profileNameHq,
+            videoSourceConfigToken: this.videoSourceConfigTokenHq,
+            videoSourceConfigName: this.videoSourceConfigNameHq,
+            videoEncoderToken: this.videoEncoderTokenHq,
+            videoEncoderConfigName: this.videoEncoderConfigNameHq,
+            stream: this.camera.streams.hq,
+            streamUri: this.camera.endpoints.rtspUriHq
+        };
+    }
+
+    getProfileDefinitionByConfigurationToken(token) {
+        if (token === this.videoSourceConfigTokenLq || token === this.videoEncoderTokenLq) {
+            return this.getProfileDefinitionByToken(this.profileTokenLq);
+        }
+
+        return this.getProfileDefinitionByToken(this.profileTokenHq);
+    }
+
+    buildProfile(profile) {
         return {
             $attributes: {
-                token: this.profileToken,
+                token: profile.profileToken,
                 fixed: true
             },
-            Name: this.profileName,
+            Name: profile.profileName,
             VideoSourceConfiguration: {
                 $attributes: {
-                    token: this.videoSourceConfigToken
+                    token: profile.videoSourceConfigToken
                 },
-                Name: this.videoSourceConfigName,
+                Name: profile.videoSourceConfigName,
                 UseCount: 1,
                 SourceToken: this.videoSourceToken
             },
             VideoEncoderConfiguration: {
                 $attributes: {
-                    token: this.videoEncoderToken
+                    token: profile.videoEncoderToken
                 },
-                Name: this.videoEncoderConfigName,
+                Name: profile.videoEncoderConfigName,
                 UseCount: 1,
-                Encoding: this.camera.stream.encoding,
+                Encoding: profile.stream.encoding,
                 Resolution: {
-                    Width: this.camera.stream.width,
-                    Height: this.camera.stream.height
+                    Width: profile.stream.width,
+                    Height: profile.stream.height
                 },
-                Quality: this.camera.stream.quality,
+                Quality: profile.stream.quality,
                 RateControl: {
-                    FrameRateLimit: this.camera.stream.framerate,
+                    FrameRateLimit: profile.stream.framerate,
                     EncodingInterval: 1,
-                    BitrateLimit: this.camera.stream.bitrate
+                    BitrateLimit: profile.stream.bitrate
                 }
             }
         };
@@ -62,25 +104,30 @@ class MediaService {
 
     // ONVIF: GetProfiles
     async GetProfiles() {
+        const profiles = [
+            this.buildProfile(this.getProfileDefinitionByToken(this.profileTokenHq)),
+            this.buildProfile(this.getProfileDefinitionByToken(this.profileTokenLq))
+        ];
+
+        logger.debug("media", `GetProfiles called for ${this.camera.name} -> ${profiles.map((profile) => profile.$attributes.token).join(", ")}`);
+
         return {
-            Profiles: [
-                this.buildProfile()
-            ]
+            Profiles: profiles
         };
     }
 
     // ONVIF: GetStreamUri
     async GetStreamUri(args) {
-        const streamUri = this.camera.endpoints.rtspUri;
+        const profile = this.getProfileDefinitionByToken(args && args.ProfileToken);
 
         logger.debug("media",
             `GetStreamUri called for ${this.camera.name} ` +
-            `(ProfileToken=${args && args.ProfileToken}) -> ${streamUri}`
+            `(ProfileToken=${args && args.ProfileToken}, kind=${profile.kind}) -> ${profile.streamUri}`
         );
 
         return {
             MediaUri: {
-                Uri: streamUri,
+                Uri: profile.streamUri,
                 InvalidAfterConnect: false,
                 InvalidAfterReboot: false,
                 Timeout: "PT0S"
@@ -113,17 +160,17 @@ class MediaService {
                     $attributes: {
                         token: this.videoSourceToken
                     },
-                    Framerate: this.camera.stream.framerate,
+                    Framerate: this.camera.streams.hq.framerate,
                     Resolution: {
-                        Width: this.camera.stream.width,
-                        Height: this.camera.stream.height
+                        Width: this.camera.streams.hq.width,
+                        Height: this.camera.streams.hq.height
                     },
                     Bounds: {
                         $attributes: {
                             x: 0,
                             y: 0,
-                            width: this.camera.stream.width,
-                            height: this.camera.stream.height
+                            width: this.camera.streams.hq.width,
+                            height: this.camera.streams.hq.height
                         }
                     }
                 }
@@ -133,17 +180,19 @@ class MediaService {
 
     // ONVIF: GetVideoSourceConfiguration
     async GetVideoSourceConfiguration(args) {
+        const profile = this.getProfileDefinitionByConfigurationToken(args && args.ConfigurationToken);
+
         logger.debug('media',
             `GetVideoSourceConfiguration called for ${this.camera.name} ` +
-            `(ConfigurationToken=${args && args.ConfigurationToken})`
+            `(ConfigurationToken=${args && args.ConfigurationToken}, kind=${profile.kind})`
         );
 
         return {
             VideoSourceConfiguration: {
                 $attributes: {
-                    token: this.videoSourceConfigToken
+                    token: profile.videoSourceConfigToken
                 },
-                Name: this.videoSourceConfigName,
+                Name: profile.videoSourceConfigName,
                 UseCount: 1,
                 SourceToken: this.videoSourceToken
             }
@@ -152,28 +201,30 @@ class MediaService {
 
     // ONVIF: GetVideoEncoderConfiguration
     async GetVideoEncoderConfiguration(args) {
+        const profile = this.getProfileDefinitionByConfigurationToken(args && args.ConfigurationToken);
+
         logger.debug('media',
             `GetVideoEncoderConfiguration called for ${this.camera.name} ` +
-            `(ConfigurationToken=${args && args.ConfigurationToken})`
+            `(ConfigurationToken=${args && args.ConfigurationToken}, kind=${profile.kind})`
         );
 
         return {
             VideoEncoderConfiguration: {
                 $attributes: {
-                    token: this.videoEncoderToken
+                    token: profile.videoEncoderToken
                 },
-                Name: this.videoEncoderConfigName,
+                Name: profile.videoEncoderConfigName,
                 UseCount: 1,
-                Encoding: this.camera.stream.encoding,
+                Encoding: profile.stream.encoding,
                 Resolution: {
-                    Width: this.camera.stream.width,
-                    Height: this.camera.stream.height
+                    Width: profile.stream.width,
+                    Height: profile.stream.height
                 },
-                Quality: this.camera.stream.quality,
+                Quality: profile.stream.quality,
                 RateControl: {
-                    FrameRateLimit: this.camera.stream.framerate,
+                    FrameRateLimit: profile.stream.framerate,
                     EncodingInterval: 1,
-                    BitrateLimit: this.camera.stream.bitrate
+                    BitrateLimit: profile.stream.bitrate
                 }
             }
         };

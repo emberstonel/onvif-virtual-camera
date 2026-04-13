@@ -6,6 +6,7 @@ class RtspProxyService {
         this.camera = camera;
         this.onFatalError = onFatalError;
         this.proxy = null;
+        this.loggedSessions = new Set();
     }
 
     start() {
@@ -32,6 +33,39 @@ class RtspProxyService {
 
         this.proxy.server?.on("error", (err) => {
             this.onFatalError?.(err);
+        });
+
+        this.proxy.server?.on("connection", (socket) => {
+            const sessionKey = `${socket.remoteAddress}:${socket.remotePort}`;
+
+            socket.on("data", (data) => {
+                if (this.loggedSessions.has(sessionKey)) {
+                    return;
+                }
+
+                const line = data.toString("utf8").split(/\r?\n/, 1)[0] || "";
+                if (!line.startsWith("DESCRIBE ") && !line.startsWith("SETUP ") && !line.startsWith("PLAY ")) {
+                    return;
+                }
+
+                this.loggedSessions.add(sessionKey);
+
+                const requestPath = line.split(" ", 3)[1] || "<unknown>";
+                const streamKind = requestPath.includes(this.camera.rtspPathLq)
+                    ? "lq"
+                    : requestPath.includes(this.camera.rtspPathHq)
+                        ? "hq"
+                        : "unknown";
+
+                logger.debug("media", `RTSP request for ${this.camera.name} (client=${sessionKey}, kind=${streamKind}) -> ${requestPath}`);
+            });
+
+            const clearSession = () => {
+                this.loggedSessions.delete(sessionKey);
+            };
+
+            socket.on("close", clearSession);
+            socket.on("error", clearSession);
         });
 
         this.camera.lifecycle.rtspProxyReady = true;

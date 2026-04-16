@@ -1,0 +1,219 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<wsdl:definitions
+    xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+    xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+    xmlns:xs="http://www.w3.org/2001/XMLSchema"
+    xmlns:trt="http://www.onvif.org/ver10/media/wsdl"
+    xmlns:tt="http://www.onvif.org/ver10/schema"
+    targetNamespace="http://www.onvif.org/ver10/media/wsdl">
+
+    <wsdl:types>
+        <xs:schema targetNamespace="http://www.onvif.org/ver10/media/wsdl" elementFormDefault="qualified">
+            <xs:import namespace="http://www.onvif.org/ver10/schema" schemaLocation="types.xsd"/>
+            <xs:element name="GetProfiles">
+                <xs:complexType/>
+            </xs:element>
+            <xs:element name="GetProfilesResponse">
+                <xs:complexType>
+                    <xs:sequence>
+                        <xs:element name="Profiles" type="tt:Profile" minOccurs="0" maxOccurs="unbounded"/>
+                    </xs:sequence>
+                </xs:complexType>
+            </xs:element>
+            <xs:element name="GetStreamUri">
+                <xs:complexType>
+                    <xs:sequence>
+                        <xs:element name="ProfileToken" type="tt:ReferenceToken" minOccurs="0"/>
+                    </xs:sequence>
+                </xs:complexType>
+            </xs:element>
+            <xs:element name="GetStreamUriResponse">
+                <xs:complexType>
+                    <xs:sequence>
+                        <xs:element name="MediaUri" type="tt:MediaUri"/>
+                    </xs:sequence>
+                </xs:complexType>
+            </xs:element>
+            <xs:element name="GetSnapshotUri">
+                <xs:complexType>
+                    <xs:sequence>
+                        <xs:element name="ProfileToken" type="tt:ReferenceToken" minOccurs="0"/>
+                    </xs:sequence>
+                </xs:complexType>
+            </xs:element>
+            <xs:element name="GetSnapshotUriResponse">
+                <xs:complexType>
+                    <xs:sequence>
+                        <xs:element name="MediaUri" type="tt:MediaUri"/>
+                    </xs:sequence>
+                </xs:complexType>
+            </xs:element>
+            <xs:element name="GetVideoSources">
+                <xs:complexType/>
+            </xs:element>
+            <xs:element name="GetVideoSourcesResponse">
+                <xs:complexType>
+                    <xs:sequence>
+                        <xs:element name="VideoSources" type="tt:VideoSource" minOccurs="0" maxOccurs="unbounded"/>
+                    </xs:sequence>
+                </xs:complexType>
+            </xs:element>
+            <xs:element name="GetVideoSourceConfiguration">
+                <xs:complexType>
+                    <xs:sequence>
+                        <xs:element name="ConfigurationToken" type="tt:ReferenceToken" minOccurs="0"/>
+                    </xs:sequence>
+                </xs:complexType>
+            </xs:element>
+            <xs:element name="GetVideoSourceConfigurationResponse">
+                <xs:complexType>
+                    <xs:sequence>
+                        <xs:element name="VideoSourceConfiguration" type="tt:VideoSourceConfiguration"/>
+                    </xs:sequence>
+                </xs:complexType>
+            </xs:element>
+            <xs:element name="GetVideoEncoderConfiguration">
+                <xs:complexType>
+                    <xs:sequence>
+                        <xs:element name="ConfigurationToken" type="tt:ReferenceToken" minOccurs="0"/>
+                    </xs:sequence>
+                </xs:complexType>
+            </xs:element>
+            <xs:element name="GetVideoEncoderConfigurationResponse">
+                <xs:complexType>
+                    <xs:sequence>
+                        <xs:element name="VideoEncoderConfiguration" type="tt:VideoEncoderConfiguration"/>
+                    </xs:sequence>
+                </xs:complexType>
+            </xs:element>
+        </xs:schema>
+    </wsdl:types>
+
+    <wsdl:message name="GetProfilesRequest">
+        <wsdl:part name="parameters" element="trt:GetProfiles"/>
+    </wsdl:message>
+    <wsdl:message name="GetProfilesResponse">
+        <wsdl:part name="parameters" element="trt:GetProfilesResponse"/>
+    </wsdl:message>
+    <wsdl:message name="GetStreamUriRequest">
+        <wsdl:part name="parameters" element="trt:GetStreamUri"/>
+    </wsdl:message>
+    <wsdl:message name="GetStreamUriResponse">
+        <wsdl:part name="parameters" element="trt:GetStreamUriResponse"/>
+    </wsdl:message>
+    <wsdl:message name="GetSnapshotUriRequest">
+        <wsdl:part name="parameters" element="trt:GetSnapshotUri"/>
+    </wsdl:message>
+    <wsdl:message name="GetSnapshotUriResponse">
+        <wsdl:part name="parameters" element="trt:GetSnapshotUriResponse"/>
+    </wsdl:message>
+    <wsdl:message name="GetVideoSourcesRequest">
+        <wsdl:part name="parameters" element="trt:GetVideoSources"/>
+    </wsdl:message>
+    <wsdl:message name="GetVideoSourcesResponse">
+        <wsdl:part name="parameters" element="trt:GetVideoSourcesResponse"/>
+    </wsdl:message>
+    <wsdl:message name="GetVideoSourceConfigurationRequest">
+        <wsdl:part name="parameters" element="trt:GetVideoSourceConfiguration"/>
+    </wsdl:message>
+    <wsdl:message name="GetVideoSourceConfigurationResponse">
+        <wsdl:part name="parameters" element="trt:GetVideoSourceConfigurationResponse"/>
+    </wsdl:message>
+    <wsdl:message name="GetVideoEncoderConfigurationRequest">
+        <wsdl:part name="parameters" element="trt:GetVideoEncoderConfiguration"/>
+    </wsdl:message>
+    <wsdl:message name="GetVideoEncoderConfigurationResponse">
+        <wsdl:part name="parameters" element="trt:GetVideoEncoderConfigurationResponse"/>
+    </wsdl:message>
+
+    <wsdl:portType name="MediaPort">
+        <wsdl:operation name="GetProfiles">
+            <wsdl:input message="trt:GetProfilesRequest"/>
+            <wsdl:output message="trt:GetProfilesResponse"/>
+        </wsdl:operation>
+        <wsdl:operation name="GetStreamUri">
+            <wsdl:input message="trt:GetStreamUriRequest"/>
+            <wsdl:output message="trt:GetStreamUriResponse"/>
+        </wsdl:operation>
+        <wsdl:operation name="GetSnapshotUri">
+            <wsdl:input message="trt:GetSnapshotUriRequest"/>
+            <wsdl:output message="trt:GetSnapshotUriResponse"/>
+        </wsdl:operation>
+        <wsdl:operation name="GetVideoSources">
+            <wsdl:input message="trt:GetVideoSourcesRequest"/>
+            <wsdl:output message="trt:GetVideoSourcesResponse"/>
+        </wsdl:operation>
+        <wsdl:operation name="GetVideoSourceConfiguration">
+            <wsdl:input message="trt:GetVideoSourceConfigurationRequest"/>
+            <wsdl:output message="trt:GetVideoSourceConfigurationResponse"/>
+        </wsdl:operation>
+        <wsdl:operation name="GetVideoEncoderConfiguration">
+            <wsdl:input message="trt:GetVideoEncoderConfigurationRequest"/>
+            <wsdl:output message="trt:GetVideoEncoderConfigurationResponse"/>
+        </wsdl:operation>
+    </wsdl:portType>
+
+    <wsdl:binding name="MediaBinding" type="trt:MediaPort">
+        <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+        <wsdl:operation name="GetProfiles">
+            <soap:operation soapAction="http://www.onvif.org/ver10/media/wsdl/GetProfiles"/>
+            <wsdl:input>
+                <soap:body use="literal"/>
+            </wsdl:input>
+            <wsdl:output>
+                <soap:body use="literal"/>
+            </wsdl:output>
+        </wsdl:operation>
+        <wsdl:operation name="GetStreamUri">
+            <soap:operation soapAction="http://www.onvif.org/ver10/media/wsdl/GetStreamUri"/>
+            <wsdl:input>
+                <soap:body use="literal"/>
+            </wsdl:input>
+            <wsdl:output>
+                <soap:body use="literal"/>
+            </wsdl:output>
+        </wsdl:operation>
+        <wsdl:operation name="GetSnapshotUri">
+            <soap:operation soapAction="http://www.onvif.org/ver10/media/wsdl/GetSnapshotUri"/>
+            <wsdl:input>
+                <soap:body use="literal"/>
+            </wsdl:input>
+            <wsdl:output>
+                <soap:body use="literal"/>
+            </wsdl:output>
+        </wsdl:operation>
+        <wsdl:operation name="GetVideoSources">
+            <soap:operation soapAction="http://www.onvif.org/ver10/media/wsdl/GetVideoSources"/>
+            <wsdl:input>
+                <soap:body use="literal"/>
+            </wsdl:input>
+            <wsdl:output>
+                <soap:body use="literal"/>
+            </wsdl:output>
+        </wsdl:operation>
+        <wsdl:operation name="GetVideoSourceConfiguration">
+            <soap:operation soapAction="http://www.onvif.org/ver10/media/wsdl/GetVideoSourceConfiguration"/>
+            <wsdl:input>
+                <soap:body use="literal"/>
+            </wsdl:input>
+            <wsdl:output>
+                <soap:body use="literal"/>
+            </wsdl:output>
+        </wsdl:operation>
+        <wsdl:operation name="GetVideoEncoderConfiguration">
+            <soap:operation soapAction="http://www.onvif.org/ver10/media/wsdl/GetVideoEncoderConfiguration"/>
+            <wsdl:input>
+                <soap:body use="literal"/>
+            </wsdl:input>
+            <wsdl:output>
+                <soap:body use="literal"/>
+            </wsdl:output>
+        </wsdl:operation>
+    </wsdl:binding>
+
+    <wsdl:service name="MediaService">
+        <wsdl:port name="MediaPort" binding="trt:MediaBinding">
+            <soap:address location="http://0.0.0.0/onvif/media_service"/>
+        </wsdl:port>
+    </wsdl:service>
+</wsdl:definitions>

@@ -1,450 +1,318 @@
-const soap = require('soap');
-const http = require('http');
-const dgram = require('dgram');
-const xml2js = require('xml2js');
-const uuid = require('node-uuid');
-const url = require('url');
-const fs = require('fs');
-const os = require('os');
-
-Date.prototype.stdTimezoneOffset = function() {
-    let jan = new Date(this.getFullYear(), 0, 1);
-    let jul = new Date(this.getFullYear(), 6, 1);
-    return Math.max(jan.getTimezoneOffset(), jul.getTimezoneOffset());
-}
-
-Date.prototype.isDstObserved = function() {
-    return this.getTimezoneOffset() < this.stdTimezoneOffset();
-}
-
-function getIpAddressFromMac(macAddress) {
-    let networkInterfaces = os.networkInterfaces();
-    for (let interface in networkInterfaces)
-        for (let network of networkInterfaces[interface])
-            if (network.family == 'IPv4' && network.mac.toLowerCase() == macAddress.toLowerCase())
-                return network.address;
-    return null;
-}
+// src/onvif-server.js
+const fs = require("fs");
+const http = require("http");
+const soap = require("soap");
+const path = require("path");
+const logger = require("./log-manager");
+const DeviceService = require("./services/device-service");
+const MediaService = require("./services/media-service");
+const RtspProxyService = require("./services/rtsp-proxy-service");
+const SnapshotService = require("./services/snapshot-service");
 
 class OnvifServer {
-    constructor(config, logger) {
-        this.config = config;
-        this.logger = logger;
+    constructor(camera, discoveryManager) {
+        this.camera = camera;
+        this.hasAuth = !!(this.camera.auth && this.camera.auth.username && this.camera.auth.password);
+        this.lastSoapMethod = "unknown";
+        this.httpServer = null;
 
-        if (!this.config.hostname)
-            this.config.hostname = getIpAddressFromMac(this.config.mac);
+        this.discoveryManager = discoveryManager;
+        this.deviceService = new DeviceService(camera);
+        this.mediaService = new MediaService(camera);
+        this.rtspProxyService = new RtspProxyService(camera, (err) => this.failFatal(err));
+        this.snapshotService = new SnapshotService(camera);
+    }
 
-        this.videoSource = {
-            attributes: {
-                token: 'video_src_token'
-            },
-            Framerate: this.config.highQuality.framerate,
-            Resolution: { Width: this.config.highQuality.width, Height: this.config.highQuality.height }
-        };
-    
-        this.profiles = [
-            {
-                Name: 'MainStream',
-                attributes: {
-                    token: 'main_stream'
-                },
-                VideoSourceConfiguration: {
-                    Name: 'VideoSource',
-                    UseCount: 2,
-                    attributes: {
-                        token: 'video_src_config_token'
-                    },
-                    SourceToken: 'video_src_token',
-                    Bounds: { attributes: { x: 0, y: 0, width: this.config.highQuality.width, height: this.config.highQuality.height } }
-                },
-                VideoEncoderConfiguration: {
-                    attributes: {
-                        token: 'encoder_hq_config_token'
-                    },
-                    Name: 'CardinalHqCameraConfiguration',
-                    UseCount: 1,
-                    Encoding: 'H264',
-                    Resolution: {
-                        Width: this.config.highQuality.width,
-                        Height: this.config.highQuality.height
-                    },
-                    Quality: this.config.highQuality.quality,
-                    RateControl: {
-                        FrameRateLimit: this.config.highQuality.framerate,
-                        EncodingInterval: 1,
-                        BitrateLimit: this.config.highQuality.bitrate
-                    },
-                    H264: {
-                        GovLength: this.config.highQuality.framerate,
-                        H264Profile: 'Main'
-                    },
-                    SessionTimeout: 'PT1000S'
-                }
+    failFatal(err) {
+        process.nextTick(() => {
+            throw err;
+        });
+    }
+
+    logLifecycleState() {
+        const lifecycle = this.camera.lifecycle;
+        logger.debug("lifecycle",
+            `Camera lifecycle ready for ${this.camera.name}: ` +
+            `http=${lifecycle.httpReady}, snapshot=${lifecycle.snapshotReady}, ` +
+            `rtsp=${lifecycle.rtspProxyReady}, discovery=${lifecycle.discoveryReady}`
+        );
+    }
+
+    mergeTypesXsd(wsdlXml, xsdXml) {
+        const schemaBody = xsdXml
+            .replace(/^\s*<\?xml[^>]*>\s*/i, "")
+            .match(/<xs:schema\b[^>]*>([\s\S]*?)<\/xs:schema>/i)?.[1];
+
+        if (!schemaBody) {
+            throw new Error("types.xsd content does not contain a valid <xs:schema> block");
+        }
+
+        const merged = wsdlXml.replace(
+            /<xs:import\b[^>]*schemaLocation=["']types\.xsd["'][^>]*\/>\s*/i,
+            schemaBody
+        );
+
+        if (merged === wsdlXml) {
+            throw new Error("types.xsd import not found in WSDL");
+        }
+
+        return merged;
+    }
+
+    authenticateRequest(security) {
+        if (!this.hasAuth) {
+            logger.debug('auth', `SOAP auth disabled for ${this.camera.name}`);
+            return true;
+        }
+        if (!security) {
+            logger.warn(`SOAP auth missing security object for ${this.camera.name} (method=${this.lastSoapMethod})`);
+            return false;
+        }
+
+        logger.debug('auth', `SOAP auth security keys for ${this.camera.name}: ${Object.keys(security).join(", ")}`);
+
+        const token = security.UsernameToken;
+        if (!token) {
+            logger.warn(`SOAP auth missing UsernameToken for ${this.camera.name}`);
+            return false;
+        }
+
+        logger.debug('auth', `SOAP UsernameToken keys for ${this.camera.name}: ${Object.keys(token).join(", ")}`);
+
+        const username = token.Username;
+        const passwordRaw = token.Password;
+        const nonceRaw = token.Nonce;
+        const createdRaw = token.Created;
+
+        const passwordValue = typeof passwordRaw === "string"
+            ? passwordRaw
+            : passwordRaw?.$value ?? passwordRaw?._ ?? passwordRaw?.value;
+
+        const nonceValue = typeof nonceRaw === "string"
+            ? nonceRaw
+            : nonceRaw?.$value ?? nonceRaw?._ ?? nonceRaw?.value;
+
+        const createdValue = typeof createdRaw === "string"
+            ? createdRaw
+            : createdRaw?.$value ?? createdRaw?._ ?? createdRaw?.value;
+
+        logger.debug('auth', 
+            `SOAP auth attempt for ${this.camera.name}: ` +
+            `username=${username || "<missing>"}, ` +
+            `hasPassword=${passwordRaw !== undefined}, ` +
+            `passwordType=${typeof passwordRaw}, ` +
+            `hasNonce=${nonceRaw !== undefined}, ` +
+            `hasCreated=${createdRaw !== undefined}`
+        );
+
+        if (passwordRaw && typeof passwordRaw === "object") {
+            logger.debug('auth', `SOAP Password object keys for ${this.camera.name}: ${Object.keys(passwordRaw).join(", ")}`);
+        }
+
+        if (username !== this.camera.auth.username) {
+            logger.debug('auth', `SOAP auth attempt for ${this.camera.name}: username=${username}, accepted=false (username mismatch)`);
+            return false;
+        }
+
+        if (typeof passwordRaw === "string") {
+            const accepted = passwordRaw === this.camera.auth.password;
+            logger.debug('auth', `SOAP auth attempt for ${this.camera.name}: username=${username}, accepted=${accepted}, mode=PasswordText`);
+            return accepted;
+        }
+
+        if (passwordRaw && typeof passwordRaw === "object") {
+            const crypto = require("crypto");
+            const passwordTypeUri = passwordRaw?.$attributes?.Type || passwordRaw?.Type || passwordRaw?.type || "";
+
+            if (!passwordValue || !nonceValue || !createdValue) {
+                logger.warn(`SOAP auth digest missing required fields for ${this.camera.name}`);
+                return false;
             }
-        ];
 
-        if (this.config.lowQuality) {
-            this.profiles.push(
-                {
-                    Name: 'SubStream',
-                    attributes: {
-                        token: 'sub_stream'
-                    },
-                    VideoSourceConfiguration: {
-                        Name: 'VideoSource',
-                        UseCount: 2,
-                        attributes: {
-                            token: 'video_src_config_token'
-                        },
-                        SourceToken: 'video_src_token',
-                        Bounds: { attributes: { x: 0, y: 0, width: this.config.highQuality.width, height: this.config.highQuality.height } }
-                    },
-                    VideoEncoderConfiguration: {
-                        attributes: {
-                            token: 'encoder_lq_config_token'
-                        },
-                        Name: 'CardinalLqCameraConfiguration',
-                        UseCount: 1,
-                        Encoding: 'H264',
-                        Resolution: {
-                            Width: this.config.lowQuality.width,
-                            Height: this.config.lowQuality.height
-                        },
-                        Quality: this.config.lowQuality.quality,
-                        RateControl: {
-                            FrameRateLimit: this.config.lowQuality.framerate,
-                            EncodingInterval: 1,
-                            BitrateLimit: this.config.lowQuality.bitrate
-                        },
-                        H264: {
-                            GovLength: this.config.lowQuality.framerate,
-                            H264Profile: 'Main'
-                        },
-                        SessionTimeout: 'PT1000S'
-                    }
-                }
+            let nonceBuffer;
+            try {
+                nonceBuffer = Buffer.from(nonceValue, "base64");
+            } catch (err) {
+                logger.warn(`SOAP auth digest nonce decode failed for ${this.camera.name}: ${err.message}`);
+                return false;
+            }
+
+            const expectedDigest = crypto
+                .createHash("sha1")
+                .update(Buffer.concat([
+                    nonceBuffer,
+                    Buffer.from(createdValue, "utf8"),
+                    Buffer.from(this.camera.auth.password, "utf8")
+                ]))
+                .digest("base64");
+
+            const accepted = passwordValue === expectedDigest;
+
+            logger.debug('auth', 
+                `SOAP auth attempt for ${this.camera.name}: ` +
+                `username=${username}, accepted=${accepted}, mode=PasswordDigest, type=${passwordTypeUri || "<unknown>"}`
             );
+
+            return accepted;
         }
-        
-        this.onvif = {
-            DeviceService: {
-                Device: {
-                    GetSystemDateAndTime: (args) => {
-                        let now = new Date();
-            
-                        let offset = now.getTimezoneOffset();
-                        let abs_offset = Math.abs(offset);
-                        let hrs_offset = Math.floor(abs_offset / 60);
-                        let mins_offset = (abs_offset % 60);
-                        let tz = 'UTC' + (offset < 0 ? '-' : '+') + hrs_offset + (mins_offset === 0 ? '' : ':' + mins_offset);
-            
-                        return {
-                            SystemDateAndTime: {
-                                DateTimeType: 'NTP',
-                                DaylightSavings: now.isDstObserved(),
-                                TimeZone: {
-                                    TZ: tz
-                                },
-                                UTCDateTime: {
-                                    Time: { Hour: now.getUTCHours(), Minute: now.getUTCMinutes(), Second: now.getUTCSeconds() },
-                                    Date: { Year: now.getUTCFullYear(), Month: now.getUTCMonth() + 1, Day: now.getUTCDate() }
-                                },
-                                LocalDateTime: {
-                                    Time: { Hour: now.getHours(), Minute: now.getMinutes(), Second: now.getSeconds() },
-                                    Date: { Year: now.getFullYear(), Month: now.getMonth() + 1, Day: now.getDate() }
-                                },
-                                Extension: {}
-                            }
-                        };
-                    },
-        
-                    GetCapabilities: (args) => {
-                        let response = {
-                            Capabilities: {}
-                        };
-                
-                        if (args.Category === undefined || args.Category == 'All' || args.Category == 'Device') {
-                            response.Capabilities['Device'] = {
-                                XAddr: `http://${this.config.hostname}:${this.config.ports.server}/onvif/device_service`,
-                                Network: {
-                                    IPFilter: false,
-                                    ZeroConfiguration: false,
-                                    IPVersion6: false,
-                                    DynDNS: false,
-                                    Extension: {
-                                        Dot11Configuration: false,
-                                        Extension: {}
-                                    }
-                                },
-                                System: {
-                                    DiscoveryResolve: false,
-                                    DiscoveryBye: false,
-                                    RemoteDiscovery: false,
-                                    SystemBackup: false,
-                                    SystemLogging: false,
-                                    FirmwareUpgrade: false,
-                                    SupportedVersions: {
-                                        Major: 2,
-                                        Minor: 5
-                                    },
-                                    Extension: {
-                                        HttpFirmwareUpgrade: false,
-                                        HttpSystemBackup: false,
-                                        HttpSystemLogging: false,
-                                        HttpSupportInformation: false,
-                                        Extension: {}
-                                    }
-                                },
-                                IO: {
-                                    InputConnectors: 0,
-                                    RelayOutputs: 1,
-                                    Extension: {
-                                        Auxiliary: false,
-                                        AuxiliaryCommands: '',
-                                        Extension: {}
-                                    }
-                                },
-                                Security: {
-                                    'TLS1.1': false,
-                                    'TLS1.2': false,
-                                    OnboardKeyGeneration: false,
-                                    AccessPolicyConfig: false,
-                                    'X.509Token': false,
-                                    SAMLToken: false,
-                                    KerberosToken: false,
-                                    RELToken: false,
-                                    Extension: {
-                                        'TLS1.0': false,
-                                        Extension: {
-                                            Dot1X: false,
-                                            RemoteUserHandling: false
-                                        }
-                                    }
-                                },
-                                Extension: {}
-                            };
-                        }
-                        if (args.Category === undefined || args.Category == 'All' || args.Category == 'Media') {
-                            response.Capabilities['Media'] = {
-                                XAddr: `http://${this.config.hostname}:${this.config.ports.server}/onvif/media_service`,
-                                StreamingCapabilities: {
-                                    RTPMulticast: false,
-                                    RTP_TCP: true,
-                                    RTP_RTSP_TCP: true,
-                                    Extension: {}
-                                },
-                                Extension: {
-                                    ProfileCapabilities: {
-                                        MaximumNumberOfProfiles: this.profiles.length
-                                    }
-                                }
-                            }
-                        }
 
-                        return response;
-                    },
-        
-                    GetServices: (args) => {
-                        return {
-                            Service : [
-                                {
-                                    Namespace : 'http://www.onvif.org/ver10/device/wsdl',
-                                    XAddr : `http://${this.config.hostname}:${this.config.ports.server}/onvif/device_service`,
-                                    Version : { 
-                                        Major : 2,
-                                        Minor : 5,
-                                    }
-                                },
-                                { 
-                                    Namespace : 'http://www.onvif.org/ver10/media/wsdl',
-                                    XAddr : `http://${this.config.hostname}:${this.config.ports.server}/onvif/media_service`,
-                                    Version : { 
-                                        Major : 2,
-                                        Minor : 5,
-                                    }
-                                }
-                            ]
-                        };
-                    },
-                
-                    GetDeviceInformation: (args) => {
-                        return {
-                            Manufacturer: 'Onvif',
-                            Model: 'Cardinal',
-                            FirmwareVersion: '1.0.0',
-                            SerialNumber: `${this.config.name.replace(' ', '_')}-0000`,
-                            HardwareId: `${this.config.name.replace(' ', '_')}-1001`
-                        };
-                    }
-                
-                }
-            },
-        
-            MediaService: {
-                Media: {
-                    GetProfiles: (args) => {
-                        return {
-                            Profiles: this.profiles
-                        };
-                    },
-        
-                    GetVideoSources: (args) => {
-                        return {
-                            VideoSources: [
-                                this.videoSource
-                            ]
-                        };
-                    },
-        
-                    GetSnapshotUri: (args) => {
-                        let uri = `http://${this.config.hostname}:${this.config.ports.server}/snapshot.png`;
-                        if (args.ProfileToken == 'sub_stream' && this.config.lowQuality && this.config.lowQuality.snapshot)
-                            uri = `http://${this.config.hostname}:${this.config.ports.snapshot}${this.config.lowQuality.snapshot}`;
-                        else if (this.config.highQuality.snapshot)
-                            uri = `http://${this.config.hostname}:${this.config.ports.snapshot}${this.config.highQuality.snapshot}`;
-
-                        return {
-                            MediaUri : {
-                                Uri: uri,
-                                InvalidAfterConnect : false,
-                                InvalidAfterReboot : false,
-                                Timeout : 'PT30S'
-                            }
-                        };
-                    },
-                
-                    GetStreamUri: (args) => {
-                        let path = this.config.highQuality.rtsp;
-                        if (args.ProfileToken == 'sub_stream' && this.config.lowQuality)
-                            path = this.config.lowQuality.rtsp;
-
-                        return {
-                            MediaUri: {
-                                Uri: `rtsp://${this.config.hostname}:${this.config.ports.rtsp}${path}`,
-                                InvalidAfterConnect: false,
-                                InvalidAfterReboot: false,
-                                Timeout: 'PT30S'
-                            }
-                        };
-                    }
-                }
-            }
-        };
+        logger.warn(`SOAP auth unsupported password format for ${this.camera.name}`);
+        return false;
     }
 
-    listen(request, response) {
-        let action = url.parse(request.url, true).pathname;
-        if (action == '/snapshot.png') {
-            let image = fs.readFileSync('./resources/snapshot.png');
-            response.writeHead(200, {'Content-Type': 'image/png' });
-            response.end(image, 'binary');
-        } else {
-            response.writeHead(404, {'Content-Type': 'text/plain'});
-            response.write('404 Not Found\n');
-            response.end();
+    async stop() {
+        try {
+            await this.discoveryManager.stopCamera(this.camera);
+        } catch (err) {
+            logger.warn(`Failed to stop WS-Discovery for ${this.camera.name}: ${err.message}`);
         }
-    }
 
-    startServer() {
-        this.server = http.createServer(this.listen);
-        this.server.listen(this.config.ports.server, this.config.hostname);
+        try {
+            this.rtspProxyService.stop();
+        } catch (err) {
+            logger.warn(`Failed to stop RTSP proxy for ${this.camera.name}: ${err.message}`);
+        }
 
-        this.deviceService = soap.listen(this.server, {
-            path: '/onvif/device_service', 
-            services: this.onvif,
-            xml: fs.readFileSync('./wsdl/device_service.wsdl', 'utf8'),
-            forceSoap12Headers: true
-        });
+        this.camera.lifecycle.httpReady = false;
+        this.camera.lifecycle.snapshotReady = false;
 
-        this.mediaService = soap.listen(this.server, {
-            path: '/onvif/media_service', 
-            services: this.onvif,
-            xml: fs.readFileSync('./wsdl/media_service.wsdl', 'utf8'),
-            forceSoap12Headers: true
-        });
-    }
+        if (!this.httpServer) {
+            return;
+        }
 
-    enableDebugOutput() {
-        this.deviceService.on('request', (request, methodName) => {
-            this.logger.debug('DeviceService: ' + methodName);
-        });
-        
-        this.mediaService.on('request', (request, methodName) => {
-            this.logger.debug('MediaService: ' + methodName);
-        });
-    }
-
-    startDiscovery() {
-        this.discoveryMessageNo = 0;
-        this.discoverySocket = dgram.createSocket({ type: 'udp4', reuseAddr: true });
-        
-        this.discoverySocket.on('message', (message, remote) => {
-            xml2js.parseString(message.toString(), { tagNameProcessors: [xml2js['processors'].stripPrefix] }, (err, result) => {
-                let probeUuid = result['Envelope']['Header'][0]['MessageID'][0];
-                let probeType = '';
-                try {
-                    probeType = result['Envelope']['Body'][0]['Probe'][0]['Types'][0];
-                } catch (err) {
-                    probeType = '';
+        await new Promise((resolve, reject) => {
+            this.httpServer.close((err) => {
+                if (err) {
+                    reject(err);
+                    return;
                 }
 
-                if (typeof probeType === 'object')
-                    probeType = probeType._;
-            
-                if (typeof probeUuid === 'object')
-                    probeUuid = probeUuid._;
-
-                if (probeType === '' || probeType.indexOf('NetworkVideoTransmitter') > -1) {
-                    let response = 
-                       `<?xml version="1.0" encoding="UTF-8"?>
-                        <SOAP-ENV:Envelope xmlns:SOAP-ENV="http://www.w3.org/2003/05/soap-envelope" xmlns:wsa="http://schemas.xmlsoap.org/ws/2004/08/addressing" xmlns:d="http://schemas.xmlsoap.org/ws/2005/04/discovery" xmlns:dn="http://www.onvif.org/ver10/network/wsdl">
-                            <SOAP-ENV:Header>
-                                <wsa:MessageID>uuid:${uuid.v1()}</wsa:MessageID>
-                                <wsa:RelatesTo>${probeUuid}</wsa:RelatesTo>
-                                <wsa:To SOAP-ENV:mustUnderstand="true">http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous</wsa:To>
-                                <wsa:Action SOAP-ENV:mustUnderstand="true">http://schemas.xmlsoap.org/ws/2005/04/discovery/ProbeMatches</wsa:Action>
-                                <d:AppSequence SOAP-ENV:mustUnderstand="true" MessageNumber="${this.discoveryMessageNo}" InstanceId="1234567890"/>
-                            </SOAP-ENV:Header>
-                            <SOAP-ENV:Body>
-                                <d:ProbeMatches>
-                                    <d:ProbeMatch>
-                                        <wsa:EndpointReference>
-                                            <wsa:Address>urn:uuid:${this.config.uuid}</wsa:Address>
-                                        </wsa:EndpointReference>
-                                        <d:Types>dn:NetworkVideoTransmitter</d:Types>
-                                        <d:Scopes>
-                                            onvif://www.onvif.org/type/video_encoder
-                                            onvif://www.onvif.org/type/ptz
-                                            onvif://www.onvif.org/hardware/Onvif
-                                            onvif://www.onvif.org/name/Cardinal
-                                            onvif://www.onvif.org/location/
-                                        </d:Scopes>
-                                        <d:XAddrs>http://${this.config.hostname}:${this.config.ports.server}/onvif/device_service</d:XAddrs>
-                                        <d:MetadataVersion>1</d:MetadataVersion>
-                                    </d:ProbeMatch>
-                                </d:ProbeMatches>
-                            </SOAP-ENV:Body>
-                        </SOAP-ENV:Envelope>`;
-
-                    this.discoveryMessageNo++;
-                    let responseBuffer = Buffer.from(response);
-                    return dgram.createSocket('udp4').send(responseBuffer, 0, responseBuffer.length, remote.port, remote.address);
-                }
+                logger.info(`HTTP listener stopped for ${this.camera.name} on ${this.camera.ip}:${this.camera.onvifPort}`);
+                resolve();
             });
         });
-        
-        this.discoverySocket.bind(3702, () => {
-            return this.discoverySocket.addMembership('239.255.255.250', this.config.hostname);
+
+        this.httpServer = null;
+    }
+
+    async start() {
+        return new Promise((resolve, reject) => {
+            const server = http.createServer(async (req, res) => {
+                if (this.snapshotService.canHandleRequest(req)) {
+                    await this.snapshotService.handleRequest(req, res);
+                    return;
+                }
+
+                if (req.url && (req.url.startsWith("/onvif/device_service") || req.url.startsWith("/onvif/media_service"))) {
+                    return;
+                }
+
+                res.statusCode = 404;
+                res.end("Not Found");
+            });
+            this.httpServer = server;
+
+            server.on("clientError", (err, socket) => {
+                logger.error(`HTTP clientError for ${this.camera.name}: ${err.message}`);
+            });
+            server.prependListener("request", (req, res) => {
+                logger.debug('http', `HTTP request for ${this.camera.name}: ${req.method} ${req.url} from ${req.socket.remoteAddress}`
+                );
+            });
+
+            const wsdlFolder = path.resolve(__dirname, 'wsdl');
+            const typesXsdPath = path.join(wsdlFolder, 'types.xsd');
+            const deviceWsdlPath = path.join(wsdlFolder, 'device_service.wsdl');
+            const mediaWsdlPath = path.join(wsdlFolder, 'media_service.wsdl');
+            const typesXsdXml = fs.readFileSync(typesXsdPath, 'utf8');
+            const deviceWsdlXml = this.mergeTypesXsd(fs.readFileSync(deviceWsdlPath, 'utf8'), typesXsdXml);
+            const mediaWsdlXml = this.mergeTypesXsd(fs.readFileSync(mediaWsdlPath, 'utf8'), typesXsdXml);
+
+            const deviceServiceDef = {
+                DeviceService: {
+                    DevicePort: this.deviceService.GetServiceDefinition()
+                }
+            };
+
+            const mediaServiceDef = {
+                MediaService: {
+                    MediaPort: this.mediaService.GetServiceDefinition()
+                }
+            };
+
+            server.listen(this.camera.onvifPort, this.camera.ip, async () => {
+                try {
+                    logger.info(`HTTP listener ready for ${this.camera.name} on ${this.camera.ip}:${this.camera.onvifPort}`);
+                    this.camera.lifecycle.httpReady = true;
+                    this.camera.lifecycle.snapshotReady = true;
+
+                    const deviceSoapServer = soap.listen(server, {
+                        path: "/onvif/device_service",
+                        services: deviceServiceDef,
+                        xml: deviceWsdlXml,
+                        forceSoap12Headers: true,
+                        attributesKey: '$attributes',
+                        wsdl_options: {
+                            attributesKey: '$attributes'
+                        }
+                    });
+                    const mediaSoapServer = soap.listen(server, {
+                        path: "/onvif/media_service",
+                        services: mediaServiceDef,
+                        xml: mediaWsdlXml,
+                        forceSoap12Headers: true,
+                        attributesKey: '$attributes',
+                        wsdl_options: {
+                            attributesKey: '$attributes'
+                        }
+                    });
+
+                    deviceSoapServer.authenticate = (security) => this.authenticateRequest(security);
+                    mediaSoapServer.authenticate = (security) => this.authenticateRequest(security);
+
+                    deviceSoapServer.on("request", (xml, methodName) => {
+                        this.lastSoapMethod = methodName;
+                        logger.debug('device', `SOAP Device request received for ${this.camera.name}: ${methodName}`);
+                    });
+                    deviceSoapServer.on("error", (err) => {
+                        logger.error(`SOAP Device error for ${this.camera.name}: ${err.message}`);
+                    });
+                    mediaSoapServer.on("request", (xml, methodName) => {
+                        this.lastSoapMethod = methodName;
+                        logger.debug('media', `SOAP Media request received for ${this.camera.name}: ${methodName}`);
+                    });
+                    mediaSoapServer.on("error", (err) => {
+                        logger.error(`SOAP Media error for ${this.camera.name}: ${err.message}`);
+                    });
+
+                    await this.discoveryManager.startCamera(this.camera, (err) => this.failFatal(err));
+                    this.rtspProxyService.start();
+
+                    this.logLifecycleState();
+                    resolve();
+                } catch (err) {
+                    logger.error(`Failed to fully start camera ${this.camera.name}: ${err.message}`);
+
+                    try {
+                        await this.stop();
+                    } catch (stopErr) {
+                        logger.warn(`Failed to clean up partially started camera ${this.camera.name}: ${stopErr.message}`);
+                    }
+
+                    reject(err);
+                }
+            });
+
+            server.on("error", (err) => {
+                logger.error(`ONVIF server error for ${this.camera.name}: ${err.message}`);
+                if (this.camera.lifecycle.httpReady) {
+                    this.failFatal(err);
+                    return;
+                }
+                reject(err);
+            });
         });
     }
-
-    getHostname() {
-        return this.config.hostname;
-    }
-};
-
-function createServer(config) {
-    return new OnvifServer(config);
 }
 
-exports.createServer = createServer;
+module.exports = OnvifServer;

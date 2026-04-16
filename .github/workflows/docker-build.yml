@@ -1,0 +1,35 @@
+name: Build onvif-virtual-camera
+
+on:
+  push:
+    branches:
+      - 'main'
+      - 'dev'
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          target: ${{ github.ref_name == 'dev' && 'dev' || 'prod' }}
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/onvif-virtual-camera:${{ github.ref_name }}
+            ${{ github.ref_name == 'main' && format('ghcr.io/{0}/onvif-virtual-camera:latest', github.repository_owner) || '' }}

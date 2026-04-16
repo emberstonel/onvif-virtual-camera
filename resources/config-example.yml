@@ -1,0 +1,65 @@
+runtime:
+  enable_debug_logs: false
+  probe_streams: true
+  probe_timeout_ms: 15000
+  ip_monitor_interval_ms: 5000
+
+host_sources:
+  - name: cam1
+    hostname: 192.168.1.50
+    rtsp_port: 554
+    http_port: 80
+    auth:
+      username: "admin"
+      password: "password123"
+
+  - name: cam2
+    hostname: 192.168.1.51
+    rtsp_port: 554
+    http_port: 80
+    auth:
+      username: "admin"
+      password: "password123"
+
+virtual_cameras:
+  - name: "VirtualCam1"
+    model: "VCam-1080p"
+    manufacturer: "VirtualCam"
+    mac: "02:42:ac:11:00:11"
+    ip: "192.168.1.210/24"
+    host_source: cam1
+    rtsp_path_hq: "/live1"
+    rtsp_path_lq: "/live1-sub"
+    snapshot_path: "/snapshot1.jpg"
+    stream_hq:
+      encoding: "H264"
+      width: 1920
+      height: 1080
+      framerate: 15
+      bitrate: 2048
+      quality: 5
+    stream_lq:
+      encoding: "H264"
+      width: 640
+      height: 360
+      framerate: 10
+      bitrate: 512
+      quality: 3
+
+  - name: "VirtualCam2"
+    model: "VCam-1080p"
+    mac: "02:42:ac:11:00:12"
+    ip: "dhcp"
+    host_source: cam1
+    rtsp_path_hq: "/live2"
+    rtsp_path_lq: "/live2-sub"
+    snapshot_path: "/snapshot2.jpg"
+
+  - name: "VirtualCam3"
+    model: "VCam-1080p"
+    mac: "02:42:ac:11:00:13"
+    ip: "192.168.1.212/24"
+    host_source: cam2
+    rtsp_path_hq: "/live"
+    rtsp_path_lq: "/live-sub"
+    snapshot_path: "/snapshot.jpg"
